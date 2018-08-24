@@ -36,35 +36,35 @@ model.add(Dropout(0.8))
 model.add(Dense(units=1))
 model.add(Activation('sigmoid'))
 
-model.compile(loss='binary_crossentropy', optimizer='rmsprop', metrics=["accuracy"])
+model.compile(loss='binary_crossentropy', optimizer='adam', metrics=["accuracy"])
 
-# The below code is from https://www.dlology.com/blog/how-to-do-real-time-trigger-word-detection-with-keras/
-# first I need to try something a lot simpler though.
-## Convolutional layer with window size of 15
-#model.add(Conv1D(196, kernel_size=15, strides=4, input_shape=input_shape))
-#model.add(BatchNormalization())
-#model.add(Activation('relu'))
-#model.add(Dropout(0.8))
+# Now we need some data. There are 3 options here:
+# 1) retrieve_cached_data() returns the saved data from git
+def retrieve_cached_data():
+        return np.load("test-x.npy"), np.load("test-y.npy")
 
-## First GRU layer
-#model.add(GRU(units=128, return_sequences=True))
-#model.add(Dropout(0.8))
-#model.add(BatchNormalization())
 
-## Second GRU layer
-#model.add(GRU(units=128, return_sequences=True))
-#model.add(Dropout(0.8))
-#model.add(BatchNormalization())
-#model.add(Dropout(0.8))
+# 2) Extract the data from the raw samples into two arrays
+def load_the_data():
+        inputs = []
+        outputs = []
+        for stub in os.listdir("training"):
+                filename = os.path.join("training", stub)
+                inputs.append(load_features(filename))
+                outputs.append(1 if stub.startswith("positive") else 0)
+        return np.array(inputs), np.array(outputs)
 
-# Finally, a time-distributed dense layer
-#model.add(TimeDistributed(Dense(1, activation="sigmoid")))
-#model.compile(loss='binary_crossentropy', optimizer=Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, decay=0.01), metrics=["accuracy"])
+# 3) Use a batch. This does not work very well (but is no worse than the others)
+def data_generator():
+        # This returns a single-item 'batch'. This is probably not good.
+        while True:
+                for stub in os.listdir("training"):
+                        filename = os.path.join("training", stub)
+                        yield (np.array([load_features(filename)]), np.array([1 if stub.startswith("positive") else 0]))
 
-# Now we need some data. For this we will use a Python generator
-
-def load_features(path, filename):
-        samples, sample_rate = librosa.load(os.path.join(path, filename), duration=2.0, sr=16000)
+# This code extracts the very primitive features from a WAVE file
+def load_features(filename):
+        samples, sample_rate = librosa.load(filename, duration=2.0, sr=16000)
         if len(samples) < 32000:
                 # We must pad the file because it is too short
                 samples = np.pad(samples, (0, 32000 - len(samples) % 32000), 'constant')
@@ -77,18 +77,14 @@ def load_features(path, filename):
         return mfccs
 
 
-def data_generator():
-        # This returns a single-item 'batch'. This is probably not good.
-        while True:
-                for filename in os.listdir("positive"):
-                        yield (np.array([load_features("positive", filename)]), np.array([1]))
-                for filename in os.listdir("negative"):
-                        yield (np.array([load_features("negative", filename)]), np.array([0]))
-
-
 def predict(filename):
-    print(model.predict(np.array([load_features(".", filename)])))
+    print(model.predict(np.array([load_features(filename)])))
 
 # And now, we can train!
-model.fit_generator(data_generator(), epochs=100, steps_per_epoch=16)
+# With a generator-based trainer
+#model.fit_generator(data_generator(), epochs=100, steps_per_epoch=16)
+
+# With the whole dataset
+x, y = retrieve_cached_data()
+model.fit(x=x, y=y, epochs=100)
 
