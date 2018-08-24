@@ -20,13 +20,7 @@ from keras.optimizers import Adam
 
 model = Sequential()
 
-input_shape = (5511, 101)
-
-## Convolutional layer with window size of 15
-#model.add(Conv1D(196, kernel_size=15, strides=4, input_shape=input_shape))
-#model.add(BatchNormalization())
-#model.add(Activation('relu'))
-#model.add(Dropout(0.8))
+# This is a very simple model. Two dense layers of 128 units layers and a sigmoid output to get a binary classifier
 
 # First a dense layer
 model.add(Dense(units=128, input_dim=756))
@@ -44,6 +38,14 @@ model.add(Activation('sigmoid'))
 
 model.compile(loss='binary_crossentropy', optimizer='rmsprop', metrics=["accuracy"])
 
+# The below code is from https://www.dlology.com/blog/how-to-do-real-time-trigger-word-detection-with-keras/
+# first I need to try something a lot simpler though.
+## Convolutional layer with window size of 15
+#model.add(Conv1D(196, kernel_size=15, strides=4, input_shape=input_shape))
+#model.add(BatchNormalization())
+#model.add(Activation('relu'))
+#model.add(Dropout(0.8))
+
 ## First GRU layer
 #model.add(GRU(units=128, return_sequences=True))
 #model.add(Dropout(0.8))
@@ -57,7 +59,6 @@ model.compile(loss='binary_crossentropy', optimizer='rmsprop', metrics=["accurac
 
 # Finally, a time-distributed dense layer
 #model.add(TimeDistributed(Dense(1, activation="sigmoid")))
-
 #model.compile(loss='binary_crossentropy', optimizer=Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, decay=0.01), metrics=["accuracy"])
 
 # Now we need some data. For this we will use a Python generator
