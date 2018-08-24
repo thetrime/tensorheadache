@@ -20,36 +20,47 @@ from keras.optimizers import Adam
 
 model = Sequential()
 
-# This is a very simple model. Two dense layers of 128 units layers and a sigmoid output to get a binary classifier
+# This is a very simple model. five dense layers of 192 units (based on what Apple says they use in Siri) and a sigmoid output to get a binary classifier
 
 # First a dense layer
-model.add(Dense(units=128, input_dim=756))
+model.add(Dense(units=192, input_dim=756))
 model.add(Activation('relu'))
-model.add(Dropout(0.8))
+model.add(Dropout(0.2))
 
-# And now another one, why not
-model.add(Dense(units=128))
+model.add(Dense(units=192))
 model.add(Activation('relu'))
-model.add(Dropout(0.8))
+model.add(Dropout(0.2))
+
+model.add(Dense(units=192))
+model.add(Activation('relu'))
+model.add(Dropout(0.2))
+
+model.add(Dense(units=192))
+model.add(Activation('relu'))
+model.add(Dropout(0.2))
+
+model.add(Dense(units=192))
+model.add(Activation('relu'))
+model.add(Dropout(0.2))
 
 # And now an output layer
 model.add(Dense(units=1))
 model.add(Activation('sigmoid'))
 
-model.compile(loss='binary_crossentropy', optimizer='adam', metrics=["accuracy"])
+model.compile(loss='binary_crossentropy', optimizer=Adam(lr=0.001, beta_1=0.9, beta_2=0.999, decay=0.01), metrics=["accuracy"])
 
 # Now we need some data. There are 3 options here:
 # 1) retrieve_cached_data() returns the saved data from git
 def retrieve_cached_data():
-        return np.load("test-x.npy"), np.load("test-y.npy")
+        return np.load("train-x.npy"), np.load("train-y.npy"), np.load("test-x.npy"), np.load("test-y.npy")
 
 
 # 2) Extract the data from the raw samples into two arrays
-def load_the_data():
+def load_the_data(whence):
         inputs = []
         outputs = []
-        for stub in os.listdir("training"):
-                filename = os.path.join("training", stub)
+        for stub in os.listdir(whence):
+                filename = os.path.join(whence, stub)
                 inputs.append(load_features(filename))
                 outputs.append(1 if stub.startswith("positive") else 0)
         return np.array(inputs), np.array(outputs)
@@ -74,7 +85,8 @@ def load_features(filename):
         mfccs = mfccs[:12]
         # Make into a list
         mfccs = mfccs.flatten()
-        return mfccs
+        # Normalize the data. This seems to make an ENORMOUS difference
+        return mfccs / np.linalg.norm(mfccs)
 
 
 def predict(filename):
@@ -85,6 +97,15 @@ def predict(filename):
 #model.fit_generator(data_generator(), epochs=100, steps_per_epoch=16)
 
 # With the whole dataset
-x, y = retrieve_cached_data()
+#x, y = load_the_data("training")
+#xt, yt = load_the_data("testing")
+
+x, y, xt, yt = retrieve_cached_data()
+
 model.fit(x=x, y=y, epochs=100)
 
+print("Testing the model....")
+
+score = model.evaluate(x=xt, y=yt)
+
+print("Result: ", score)
