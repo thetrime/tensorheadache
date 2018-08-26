@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include "sample.h"
 
 static void free_buffer(void* data, size_t length)
 {
@@ -54,21 +55,18 @@ int main()
    input.index = 0;
    output.oper = TF_GraphOperationByName(graph, "activation_6/Sigmoid"); // Set up the output operation
    output.index = 0;
+
    // Now lets make a session
    TF_SessionOptions *opts = TF_NewSessionOptions();
    TF_Session *session = TF_NewSession(graph, opts, status);
    assert(TF_GetCode(status) == TF_OK);
 
-   // Debugging
-   /*
-   size_t pos = 0;
-   TF_Operation* oper;
-   while ((oper = TF_GraphNextOperation(graph, &pos)) != NULL)
-      printf("Operation %s\n", TF_OperationName(oper));
-   */
+   // Fill in the input tensor
+   float* input_data = TF_TensorData(input_tensor);
+   for (int i = 0; i < 756; i++)
+      input_data[i] = test_data[i];
 
-
-   // And run it the model?
+   // And run the model?
    TF_SessionRun(session,
                  /* Run Options */          NULL,
                  /* Input specification */  &input,  &input_tensor,   1,
@@ -78,6 +76,10 @@ int main()
                  status);
    assert(TF_GetCode(status) == TF_OK);
    printf("Success?\n");
+
+   float* outdata = TF_TensorData(output_tensor);
+   printf("Result: %f\n", *outdata);
+
 
    // Clean everything up
    TF_DeleteSession(session, status);
