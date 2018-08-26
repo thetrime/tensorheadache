@@ -17,10 +17,14 @@ from keras.layers import Conv1D
 from keras.layers import TimeDistributed
 from keras.models import Sequential
 from keras.optimizers import Adam
+from keras import backend as K
+
+from tensorflow.python.framework import graph_util
+from tensorflow.python.framework import graph_io
 
 model = Sequential()
 
-# This is a very simple model. five dense layers of 192 units (based on what Apple says they use in Siri) and a sigmoid output to get a binary classifier
+# This is a very simple model. five dense layers of 192 units (based on what Apple once admitted they use in Siri) and a sigmoid output to get a binary classifier
 
 # First a dense layer
 model.add(Dense(units=192, input_dim=756))
@@ -109,3 +113,16 @@ print("Testing the model....")
 score = model.evaluate(x=xt, y=yt)
 
 print("Result: ", score)
+
+print("Saving the Keras model...")
+
+model.save('model.h5')
+
+print("Saved. Saving the tensorflow model...");
+
+session = K.get_session()
+constant_graph = graph_util.convert_variables_to_constants(session, session.graph.as_graph_def(), [model.outputs[0].op.name])
+graph_io.write_graph(constant_graph, ".", "model.pb", as_text=False)
+
+print("Saved")
+
