@@ -2,3 +2,5 @@ migraine
 *.o
 .#
 *~
+model.pb
+model.h5
