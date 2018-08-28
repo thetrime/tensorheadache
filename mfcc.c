@@ -90,14 +90,25 @@ double mels_to_hz(double mels)
       return 1000 * exp((log(6.4)/27.0) * (mels - 15));
 }
 
+void free_mel_bank(double** mels)
+{
+   for (int i = 0; i < MEL_FILTER_COUNT; i++)
+      free(mels[i]);
+   free(mels);
+}
 
-void make_mel_bank(double sample_rate, double mels[MEL_FILTER_COUNT][1025])
+double** make_mel_bank(double sample_rate)
 {
    double max_frequency_hz = sample_rate / 2.0;
    double min_frequency_hz = 0;
    double max_frequency_mels = hz_to_mels(max_frequency_hz);
    double min_frequency_mels = hz_to_mels(min_frequency_hz);
    double centroids[MEL_FILTER_COUNT+2];
+
+   double **mels = malloc(sizeof(double*) * MEL_FILTER_COUNT);
+   for (int i = 0; i < MEL_FILTER_COUNT; i++)
+      mels[i] = malloc(sizeof(double) * 1025);
+
 
    // Conceptually we now want MEL_FILTER_COUNT+2 equally spaced points
    // The first one will be min_frequency_mels, and the last one max_frequency_mels
@@ -151,10 +162,14 @@ void make_mel_bank(double sample_rate, double mels[MEL_FILTER_COUNT][1025])
             mels[m][k] = 0;
       }
    }
+   return mels;
+}
 
+#define MAX(a, b) (a > b ? a : b)
 
-
-
+double power_to_db(double power)
+{
+   return 10.0 * log10(MAX(1e-10, power));
 }
 
 int mfccs(const char* filename, double* mfccs)
@@ -172,14 +187,13 @@ int mfccs(const char* filename, double* mfccs)
    double window[WINDOW_LENGTH];
    make_window(WINDOW_LENGTH, window);
 
-   double mel_bank[MEL_FILTER_COUNT][1025];
-   // FIXME: This is obviously wrong - it ruins the stack!
-   //make_mel_bank(header.sample_rate, mel_bank);
+   double** mel_bank = make_mel_bank(header.sample_rate);
 
    int sample_duration = 2;
    int sample_count = sample_duration * header.sample_rate;
    double *samples = malloc(sizeof(double) * sample_count);
 
+   double mfcc[MEL_FILTER_COUNT];
    double melspectrogram[MEL_FILTER_COUNT];
 
    // Now read in each sample, dividing by the maximum possible value to get an input between 0 and 1
@@ -198,7 +212,6 @@ int mfccs(const char* filename, double* mfccs)
       // Normalize the data to be in the range -1..1
       samples[i] = (double)sample / 32768.0;
    }
-   printf("window1: %.20f\n", window[1]);
    fclose(fd);
 
    // Ok, now we have the samples in *samples and we must do the stft
@@ -240,10 +253,7 @@ int mfccs(const char* filename, double* mfccs)
       // This means we can go from 0 to 1024 (inclusive) and skip the rest
 
       for (int i = 0; i <= WINDOW_LENGTH/2; i++)
-      {
-         printf("Data: %f + %fi\n", fft_result[i][0], fft_result[i][1]);
-         fft_result[i][0] = ((fft_result[i][0] * fft_result[i][0]) + (fft_result[i][1] * fft_result[i][1]));
-      }
+         fft_result[i][0] = fabs(((fft_result[i][0] * fft_result[i][0]) + (fft_result[i][1] * fft_result[i][1])));
 
       // Then we need the dot product of this with our Mel filter. This is the 'melspectrogram'.
       for (int i = 0; i < MEL_FILTER_COUNT; i++)
@@ -251,17 +261,26 @@ int mfccs(const char* filename, double* mfccs)
          double m = 0;
          for (int j = 0; j < WINDOW_LENGTH/2; j++)
             m = m + mel_bank[i][j] * fft_result[j][0];
-         melspectrogram[i] = m;
-         printf("melspectrogram[%d] = %.10f\n", i, melspectrogram[i]);
+         melspectrogram[i] = power_to_db(m);
       }
-      assert(0);
-
-
-      // Then convert the data from power to db using:
-      // ref=1.0, amin=1e-10, top_db=80.0
 
       // And finally we must do the DCT on this to get the result
+      //           N-1
+      // y[k] = 2* sum x[n]*cos(pi*k*(2n+1)/(2*N)), 0 <= k < N.
+      //           n=0
 
+      for (int k = 0; k < MEL_FILTER_COUNT; k++)
+      {
+         double sum = 0;
+         for (int n = 0; n < MEL_FILTER_COUNT; n++)
+            sum += melspectrogram[n] * cos(M_PI * k * (2*n+1) / (2 * MEL_FILTER_COUNT));
+         if (k == 0)
+            mfcc[k] = 2 * sum * sqrt(1.0/(4.0*MEL_FILTER_COUNT));
+         else
+            mfcc[k] = 2 * sum * sqrt(1.0/(2.0*MEL_FILTER_COUNT));
+         printf("mfcc[%d] = %.10e\n", k, mfcc[k]);
+      }
+      assert(0);
       block_offset += 512;
   
    }
@@ -269,5 +288,6 @@ int mfccs(const char* filename, double* mfccs)
    fftw_destroy_plan(plan_forward);
    fftw_free(data);
    fftw_free(fft_result);
+   free_mel_bank(mel_bank);
    return 1;
 }
