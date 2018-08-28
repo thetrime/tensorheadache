@@ -25,6 +25,8 @@
 #include <math.h>
 
 #define WINDOW_LENGTH 2048
+#define MEL_FILTER_COUNT 26
+
 
 typedef struct
 {
@@ -57,6 +59,100 @@ void make_window(int size, double* window)
    // To make a symmetric window we effectively make the window 1 unit bigger (so it is odd in length) and discard the last element
    for (int i = 0; i < WINDOW_LENGTH; i++)
       window[i] = A - ((1-A) * cos(2 * M_PI * (i / ((WINDOW_LENGTH - NOT_SYMMETRIC) * 1.0))));
+}
+/* This is what http://practicalcryptography.com/miscellaneous/machine-learning/guide-mel-frequency-cepstral-coefficients-mfccs/#eqn1 gives
+   but it turns out lots of people disagree on this process
+double hz_to_mels(double hz)
+{
+   return 1125 * log(1 + (hz/700));
+}
+
+double mels_to_hz(double mels)
+{
+   return (700 * (exp(mels / 1125.0) - 1));
+}
+*/
+
+double hz_to_mels(double hz)
+{
+   // This is the Slaney algorithm. Linear for frequencies under 1kHz and logarithmic above
+   if (hz < 1000.0)
+      return hz / (200.0 / 3.0);
+   else
+      return 15 + log(hz / 1000.0) / (log(6.4)/27.0);
+}
+
+double mels_to_hz(double mels)
+{
+   if (mels < 15)
+      return mels * 200.0 / 3.0;
+   else
+      return 1000 * exp((log(6.4)/27.0) * (mels - 15));
+}
+
+
+void make_mel_bank(double sample_rate, double mels[MEL_FILTER_COUNT][1025])
+{
+   double max_frequency_hz = sample_rate / 2.0;
+   double min_frequency_hz = 0;
+   double max_frequency_mels = hz_to_mels(max_frequency_hz);
+   double min_frequency_mels = hz_to_mels(min_frequency_hz);
+   double centroids[MEL_FILTER_COUNT+2];
+
+   // Conceptually we now want MEL_FILTER_COUNT+2 equally spaced points
+   // The first one will be min_frequency_mels, and the last one max_frequency_mels
+   // However, we want these in Hz, not Mels
+
+   double spacing = max_frequency_mels / (double)(MEL_FILTER_COUNT+1);
+   for (int i = 0; i < MEL_FILTER_COUNT+2; i++)
+      centroids[i] = mels_to_hz(i * spacing);
+
+   // Now fill in the array. We fill in the k possible values for each filter m
+   // k is an FFT bin though, and the centroids are Hz. This is important, as librosa
+   // produces a slightly different result using this technique than the bank computed
+   // via the practicalcryptography method. The latter claims that nothing is degraded,
+   // but for the purposes of checking my implementation is correct, it helps if the numbers
+   // match!
+
+   for (int m = 0; m < MEL_FILTER_COUNT; m++)
+   {
+      for (int k = 0; k < WINDOW_LENGTH; k++)
+      {
+         // There are 4 cases here. A graph might help.
+         //
+         // filter
+         //   ^
+         //   |         ^
+         //   |        /|\
+         //   |       / | \
+         //   +------/..|..\----->  frequency(hz)
+         //          |  |  |
+         //          A  B  C
+         //
+         // For filter m, B is the 'target' centroid - which is centroids[m+1].
+         // This means:
+         //   * if the frequency is less than A (ie centroids[m]) then the filter is 0
+         //   * if the frequency is between A and B (ie centroids[m] to centroids[m+1]) then the filter is sloping upwards
+         //   * if the frequency is between B and C (ie centroids[m+1] to centroids[m+2]) then the filter is sloping downwards
+         //   * if the frequency is greater than C (ie centroids[m+2]) then the filter is 0
+
+         // Furthermore we want to normalize so that the area of the filter is constant for all filters. This means dividing by the width of the band
+
+         double width = (centroids[m+2] - centroids[m])/2.0;
+         double frequency = (sample_rate * k) / WINDOW_LENGTH;
+
+         if (frequency < centroids[m])
+            mels[m][k] = 0;
+         else if (frequency <= centroids[m+1])
+            mels[m][k] = ((frequency - centroids[m]) / (centroids[m+1] - centroids[m])) / width;
+         else if (frequency <= centroids[m+2])
+            mels[m][k] = ((centroids[m+2] - frequency) / (centroids[m+2] - centroids[m+1])) / width;
+         else
+            mels[m][k] = 0;
+      }
+   }
+
+
 
 
 }
@@ -75,6 +171,9 @@ int mfccs(const char* filename, double* mfccs)
 
    double window[WINDOW_LENGTH];
    make_window(WINDOW_LENGTH, window);
+
+   double mel_bank[MEL_FILTER_COUNT][1025];
+   make_mel_bank(header.sample_rate, mel_bank);
 
    int sample_duration = 2;
    int sample_count = sample_duration * header.sample_rate;
@@ -111,7 +210,7 @@ int mfccs(const char* filename, double* mfccs)
    ifft_result = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * WINDOW_LENGTH);
    plan_forward = fftw_plan_dft_1d(WINDOW_LENGTH, data, fft_result, FFTW_FORWARD, FFTW_ESTIMATE );
 
-   // Now we read in 2048 samples at a time, starting at 0, then 512, then 1024, and so on, until we get to the end
+   // Now we read in 2048 samples at a time, starting at 0, then 512, then 1024, then 1536, and so on, until we get to the end
 
    int block_offset = 0;
    int readIndex;
@@ -130,14 +229,21 @@ int mfccs(const char* filename, double* mfccs)
       // Actually do the FFT
       fftw_execute(plan_forward);
 
-      // At this point we have the right answer that stft would give!
+      // At this point we have the right answer that stft would give.
+      // Next, compute the square of the absolute value of each element. Fortunately this is just data[i][0]**2 + data[i][1]**2
+      // Since we do not need the raw data again, we can just put this directly back into data[i][0]
+      // Also note that we only care about the first half of the output because of symmetry around the nyquist frequency
+      // This means we can go from 0 to 1024 (inclusive) and skip the rest
 
-      // Next, square each element and take the absolute value. This is the spectrogram
+      for (int i = 0; i <= WINDOW_LENGTH/2; i++)
+         data[i][0] = ((data[i][0] * data[i][0]) + (data[i][1] * data[i][1]));
 
       // Then we need the dot product of this with our Mel filter. This is the 'melspectrogram'.
 
-      // Then finally convert the data from power to db using:
+      // Then convert the data from power to db using:
       // ref=1.0, amin=1e-10, top_db=80.0
+
+      // And finally we must do the DCT on this to get the result
 
       block_offset += 512;
   
