@@ -49,8 +49,8 @@ typedef struct
    int data_bytes;         // Number of bytes in data. Number of samples * num_channels * sample byte size
 }  wav_header_t;
 
-// Set NOT_SYMMETRIC to 1 if you want a non-symmetric window for some reason
-#define NOT_SYMMETRIC 0
+// Set NON_SYMMETRIC to 1 if you want a non-symmetric window for some reason
+#define NON_SYMMETRIC 0
 
 void make_window(int size, double* window)
 {
@@ -58,7 +58,7 @@ void make_window(int size, double* window)
    double A = 0.5; // Hann
    // To make a symmetric window we effectively make the window 1 unit bigger (so it is odd in length) and discard the last element
    for (int i = 0; i < WINDOW_LENGTH; i++)
-      window[i] = A - ((1-A) * cos(2 * M_PI * (i / ((WINDOW_LENGTH - NOT_SYMMETRIC) * 1.0))));
+      window[i] = A - ((1-A) * cos(2 * M_PI * (i / ((WINDOW_LENGTH - NON_SYMMETRIC) * 1.0))));
 }
 /* This is what http://practicalcryptography.com/miscellaneous/machine-learning/guide-mel-frequency-cepstral-coefficients-mfccs/#eqn1 gives
    but it turns out lots of people disagree on this process
@@ -173,11 +173,14 @@ int mfccs(const char* filename, double* mfccs)
    make_window(WINDOW_LENGTH, window);
 
    double mel_bank[MEL_FILTER_COUNT][1025];
-   make_mel_bank(header.sample_rate, mel_bank);
+   // FIXME: This is obviously wrong - it ruins the stack!
+   //make_mel_bank(header.sample_rate, mel_bank);
 
    int sample_duration = 2;
    int sample_count = sample_duration * header.sample_rate;
    double *samples = malloc(sizeof(double) * sample_count);
+
+   double melspectrogram[MEL_FILTER_COUNT];
 
    // Now read in each sample, dividing by the maximum possible value to get an input between 0 and 1
    for (int i = 0 ; i < sample_count; i++)
@@ -195,19 +198,17 @@ int mfccs(const char* filename, double* mfccs)
       // Normalize the data to be in the range -1..1
       samples[i] = (double)sample / 32768.0;
    }
-   printf("sample1: %.20f\n", samples[1]);
    printf("window1: %.20f\n", window[1]);
    fclose(fd);
 
    // Ok, now we have the samples in *samples and we must do the stft
    // First set up the buffers and build the FFT plan
 
-   fftw_complex    *data, *fft_result, *ifft_result;
+   fftw_complex    *data, *fft_result;
    fftw_plan       plan_forward;
 
    data        = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * WINDOW_LENGTH);
    fft_result  = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * WINDOW_LENGTH);
-   ifft_result = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * WINDOW_LENGTH);
    plan_forward = fftw_plan_dft_1d(WINDOW_LENGTH, data, fft_result, FFTW_FORWARD, FFTW_ESTIMATE );
 
    // Now we read in 2048 samples at a time, starting at 0, then 512, then 1024, then 1536, and so on, until we get to the end
@@ -229,16 +230,32 @@ int mfccs(const char* filename, double* mfccs)
       // Actually do the FFT
       fftw_execute(plan_forward);
 
-      // At this point we have the right answer that stft would give.
+      // At this point we have the right answer that stft would give if we have center=False
+      // If we want the answer to exactly match librosa then we need to do reflection padding too
+
+
       // Next, compute the square of the absolute value of each element. Fortunately this is just data[i][0]**2 + data[i][1]**2
       // Since we do not need the raw data again, we can just put this directly back into data[i][0]
       // Also note that we only care about the first half of the output because of symmetry around the nyquist frequency
       // This means we can go from 0 to 1024 (inclusive) and skip the rest
 
       for (int i = 0; i <= WINDOW_LENGTH/2; i++)
-         data[i][0] = ((data[i][0] * data[i][0]) + (data[i][1] * data[i][1]));
+      {
+         printf("Data: %f + %fi\n", fft_result[i][0], fft_result[i][1]);
+         fft_result[i][0] = ((fft_result[i][0] * fft_result[i][0]) + (fft_result[i][1] * fft_result[i][1]));
+      }
 
       // Then we need the dot product of this with our Mel filter. This is the 'melspectrogram'.
+      for (int i = 0; i < MEL_FILTER_COUNT; i++)
+      {
+         double m = 0;
+         for (int j = 0; j < WINDOW_LENGTH/2; j++)
+            m = m + mel_bank[i][j] * fft_result[j][0];
+         melspectrogram[i] = m;
+         printf("melspectrogram[%d] = %.10f\n", i, melspectrogram[i]);
+      }
+      assert(0);
+
 
       // Then convert the data from power to db using:
       // ref=1.0, amin=1e-10, top_db=80.0
@@ -252,6 +269,5 @@ int mfccs(const char* filename, double* mfccs)
    fftw_destroy_plan(plan_forward);
    fftw_free(data);
    fftw_free(fft_result);
-   fftw_free(ifft_result);
    return 1;
 }
