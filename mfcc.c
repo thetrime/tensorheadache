@@ -4,19 +4,7 @@
 // There is also http://practicalcryptography.com/miscellaneous/machine-learning/guide-mel-frequency-cepstral-coefficients-mfccs/
 // which is a great theoretical guide
 
-// The features in python are extracted from librosa, which is fortunately open source. So this code here attempts to replicate the librosa
-// process
-
-// Ultimately it boils down to
-//  power_to_db(melspectrogram(y=<samples>, sr=16000))
-// This requires us to compute the spectrogram and dot it with a suitable Mel filter
-
-// So first, we must obtain the output of
-//   _spectrogram(y=<samples>, S=None, n_fft=2048, hop_length=512, power=2)
-// This is computed as
-//  np.abs(stft(<samples>, n_fft=2048, hop_length=512))**2
-//
-
+// The features in python are extracted from librosa, which is fortunately open source. So this code here attempts to replicate the librosa process
 
 #include <fftw3.h>
 #include <assert.h>
@@ -25,7 +13,8 @@
 #include <math.h>
 
 #define WINDOW_LENGTH 2048
-#define MEL_FILTER_COUNT 26
+#define MEL_FILTER_COUNT 128
+#define MFCC_COUNT 12
 
 
 typedef struct
@@ -191,13 +180,14 @@ int mfccs(const char* filename, double* mfccs)
 
    int sample_duration = 2;
    int sample_count = sample_duration * header.sample_rate;
-   double *samples = malloc(sizeof(double) * sample_count);
+   // We need to leave space for 1024 samples of padding at the beginning and end
+   double *samples = malloc(sizeof(double) * (sample_count + 2048));
 
-   double mfcc[MEL_FILTER_COUNT];
+   double mfcc[MFCC_COUNT];
    double melspectrogram[MEL_FILTER_COUNT];
 
    // Now read in each sample, dividing by the maximum possible value to get an input between 0 and 1
-   for (int i = 0 ; i < sample_count; i++)
+   for (int i = 1024 ; i < sample_count + 1048; i++)
    {
       int16_t sample;
       if (feof(fd))
@@ -211,6 +201,11 @@ int mfccs(const char* filename, double* mfccs)
       }
       // Normalize the data to be in the range -1..1
       samples[i] = (double)sample / 32768.0;
+      // Add reflect padding
+      if (i <= 2048)
+         samples[2048-i] = (double)sample / 32768.0;
+      if (i > sample_count + 1024)
+         samples[2*(sample_count + 1024) + 1 - i] = (double)sample / 32768.0;
    }
    fclose(fd);
 
@@ -229,7 +224,7 @@ int mfccs(const char* filename, double* mfccs)
    int block_offset = 0;
    int readIndex;
    // Process each 2048-sample block of the signal
-   while (block_offset < sample_count)
+   while (block_offset < sample_count+2048)
    {
       // Copy the chunk into our buffer. The real part is the windowed sample. The imaginary part is 0.
       for (int i = 0; i < WINDOW_LENGTH; i++)
@@ -243,9 +238,7 @@ int mfccs(const char* filename, double* mfccs)
       // Actually do the FFT
       fftw_execute(plan_forward);
 
-      // At this point we have the right answer that stft would give if we have center=False
-      // If we want the answer to exactly match librosa then we need to do reflection padding too
-
+      // At this point we have the same answer that stft() gives
 
       // Next, compute the square of the absolute value of each element. Fortunately this is just data[i][0]**2 + data[i][1]**2
       // Since we do not need the raw data again, we can just put this directly back into data[i][0]
@@ -269,7 +262,7 @@ int mfccs(const char* filename, double* mfccs)
       // y[k] = 2* sum x[n]*cos(pi*k*(2n+1)/(2*N)), 0 <= k < N.
       //           n=0
 
-      for (int k = 0; k < MEL_FILTER_COUNT; k++)
+      for (int k = 0; k < MFCC_COUNT; k++)
       {
          double sum = 0;
          for (int n = 0; n < MEL_FILTER_COUNT; n++)
@@ -278,7 +271,6 @@ int mfccs(const char* filename, double* mfccs)
             mfcc[k] = 2 * sum * sqrt(1.0/(4.0*MEL_FILTER_COUNT));
          else
             mfcc[k] = 2 * sum * sqrt(1.0/(2.0*MEL_FILTER_COUNT));
-         printf("mfcc[%d] = %.10e\n", k, mfcc[k]);
       }
       assert(0);
       block_offset += 512;
