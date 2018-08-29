@@ -179,11 +179,15 @@ int mfccs(const char* filename, double* mfccs)
    double** mel_bank = make_mel_bank(header.sample_rate);
 
    int sample_duration = 2;
+   int pad_size = WINDOW_LENGTH;
    int sample_count = sample_duration * header.sample_rate;
+   int hop_size = 512;
+   int chunks = (sample_count + pad_size - WINDOW_LENGTH) / hop_size;
+   int next_output = 0;
+
    // We need to leave space for 1024 samples of padding at the beginning and end
    double *samples = malloc(sizeof(double) * (sample_count + 2048));
 
-   double mfcc[MFCC_COUNT];
    double melspectrogram[MEL_FILTER_COUNT];
 
    // Now read in each sample, dividing by the maximum possible value to get an input between 0 and 1
@@ -223,8 +227,9 @@ int mfccs(const char* filename, double* mfccs)
 
    int block_offset = 0;
    int readIndex;
-   // Process each 2048-sample block of the signal
-   while (block_offset < sample_count+2048)
+   double frobenius = 0;
+   // Process each 2048-sample block of the signal, stopping when the last block would exceed the input buffer
+   while (block_offset + 2048 < sample_count+2048)
    {
       // Copy the chunk into our buffer. The real part is the windowed sample. The imaginary part is 0.
       for (int i = 0; i < WINDOW_LENGTH; i++)
@@ -267,16 +272,27 @@ int mfccs(const char* filename, double* mfccs)
          double sum = 0;
          for (int n = 0; n < MEL_FILTER_COUNT; n++)
             sum += melspectrogram[n] * cos(M_PI * k * (2*n+1) / (2 * MEL_FILTER_COUNT));
+         double result;
          if (k == 0)
-            mfcc[k] = 2 * sum * sqrt(1.0/(4.0*MEL_FILTER_COUNT));
+             result = 2 * sum * sqrt(1.0/(4.0*MEL_FILTER_COUNT));
          else
-            mfcc[k] = 2 * sum * sqrt(1.0/(2.0*MEL_FILTER_COUNT));
+            result = 2 * sum * sqrt(1.0/(2.0*MEL_FILTER_COUNT));
+         frobenius += result*result;
+         mfccs[next_output++] = result;
       }
-      assert(0);
-      block_offset += 512;
-  
+      block_offset += hop_size;
    }
- 
+   printf("Generated %d MFCC values (%d)\n", next_output, MFCC_COUNT * chunks);
+   frobenius = sqrt(frobenius);
+   printf("Frobenius norm: %.10f\n", frobenius);
+
+   // Divide the whole thing by the Frobenius norm
+   for (int k = 0; k < MFCC_COUNT * chunks; k++)
+   {
+//      mfccs[k] /= frobenius;
+      printf("data[%d] = %.8f\n", k, mfccs[k]);
+   }
+
    fftw_destroy_plan(plan_forward);
    fftw_free(data);
    fftw_free(fft_result);

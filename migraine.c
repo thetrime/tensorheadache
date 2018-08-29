@@ -9,6 +9,8 @@ static void free_buffer(void* data, size_t length)
    free(data);
 }
 
+int mfccs(const char* filename, float*);
+
 int main()
 {
    printf("Hello from TensorFlow C library version %s\n", TF_Version());
@@ -62,9 +64,10 @@ int main()
    assert(TF_GetCode(status) == TF_OK);
 
    // Fill in the input tensor
-   float* input_data = TF_TensorData(input_tensor);
-   for (int i = 0; i < 756; i++)
-      input_data[i] = test_data[i];
+   mfccs("testing/negative-00.wav", TF_TensorData(input_tensor));
+   //   float* input_data = TF_TensorData(input_tensor);
+   //   for (int i = 0; i < 756; i++)
+   //      input_data[i] = test_data[i];
 
    // And run the model?
    TF_SessionRun(session,

@@ -83,12 +83,10 @@ def load_features(filename):
         if len(samples) < 32000:
                 # We must pad the file because it is too short
                 samples = np.pad(samples, (0, 32000 - len(samples) % 32000), 'constant')
-        # Compute the MFCCs
-        mfccs = librosa.feature.mfcc(y=samples, sr=sample_rate, n_mfcc=26)
-        # Keep only the lowest 12 coefficients
-        mfccs = mfccs[:12]
+        # Compute the lowest 12 MFCCs
+        mfccs = librosa.feature.mfcc(y=samples, sr=sample_rate, n_mfcc=12)
         # Make into a list
-        mfccs = mfccs.flatten()
+        mfccs = mfccs.T.flatten()
         # Normalize the data. This seems to make an ENORMOUS difference
         return mfccs / np.linalg.norm(mfccs)
 

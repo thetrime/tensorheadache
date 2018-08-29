@@ -43,12 +43,11 @@ def load_features(filename):
                 # We must pad the file because it is too short
                 samples = np.pad(samples, (0, 32000 - len(samples) % 32000), 'constant')
         # Compute the MFCCs
-        mfccs = librosa.feature.mfcc(y=samples, sr=sample_rate, n_mfcc=26)
-        # Keep only the lowest 12 coefficients
-        mfccs = mfccs[:12]
+        mfccs = librosa.feature.mfcc(y=samples, sr=sample_rate, n_mfcc=12)
         # Make into a list
-        mfccs = mfccs.flatten()
+        mfccs = mfccs.T.flatten()
         # Normalize the data. This seems to make an ENORMOUS difference
+        print(np.linalg.norm(mfccs))
         return mfccs / np.linalg.norm(mfccs)
 
 
@@ -68,3 +67,16 @@ x, y, xt, yt = retrieve_cached_data()
 score = model.evaluate(x=xt, y=yt)
 
 print("Result: ", score)
+
+
+def zz():
+        samples, sample_rate = librosa.load('testing/negative-00.wav', duration=2.0, sr=16000)
+        if len(samples) < 32000:
+                # We must pad the file because it is too short
+                samples = np.pad(samples, (0, 32000 - len(samples) % 32000), 'constant')
+        # Compute the MFCCs
+        mfccs = librosa.feature.mfcc(y=samples, sr=sample_rate, n_mfcc=12)
+        # Make into a list
+        mfccs = mfccs.T.flatten()
+        # Normalize the data. This seems to make an ENORMOUS difference
+        return mfccs
