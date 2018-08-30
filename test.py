@@ -47,7 +47,6 @@ def load_features(filename):
         # Make into a list
         mfccs = mfccs.T.flatten()
         # Normalize the data. This seems to make an ENORMOUS difference
-        print(np.linalg.norm(mfccs))
         return mfccs / np.linalg.norm(mfccs)
 
 

@@ -198,8 +198,8 @@ int mfccs(const char* filename, float* mfccs)
       // Add reflect padding
       if (i <= 2048)
          samples[2048-i] = (double)sample / 32768.0;
-      //      if (i > sample_count + 1024)
-      // samples[2*(sample_count + 1024) + 1 - i] = (double)sample / 32768.0;
+      if (i > sample_count + 1024)
+         samples[2*(sample_count + 1024) + 1 - i] = (double)sample / 32768.0;
    }
    fclose(fd);
 
@@ -289,7 +289,6 @@ int mfccs(const char* filename, float* mfccs)
          else
             result = 2 * sum * sqrt(1.0/(2.0*MEL_FILTER_COUNT));
          frobenius += result*result;
-         printf("mfcc[%d] = %.30f\n", next_output, result);
          mfccs[next_output++] = result;
       }
    }
@@ -301,7 +300,7 @@ int mfccs(const char* filename, float* mfccs)
    for (int k = 0; k < MFCC_COUNT * chunks; k++)
    {
       mfccs[k] /= frobenius;
-      printf("mfccs[%d] = %.8f\n", k, mfccs[k]);
+      //printf("mfccs[%d] = %.8f\n", k, mfccs[k]);
    }
 
    fftw_destroy_plan(plan_forward);

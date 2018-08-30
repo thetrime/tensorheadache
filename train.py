@@ -69,7 +69,7 @@ def load_the_data(whence):
                 outputs.append(1 if stub.startswith("positive") else 0)
         return np.array(inputs), np.array(outputs)
 
-# 3) Use a batch. This does not work very well (but is no worse than the others)
+# 3) Use a batch. This does not work very well for some reason
 def data_generator():
         # This returns a single-item 'batch'. This is probably not good.
         while True:
@@ -99,10 +99,15 @@ def predict(filename):
 #model.fit_generator(data_generator(), epochs=100, steps_per_epoch=16)
 
 # With the whole dataset
-#x, y = load_the_data("training")
-#xt, yt = load_the_data("testing")
+x, y = load_the_data("training")
+xt, yt = load_the_data("testing")
+np.save('train-x.npy', x)
+np.save('test-x.npy', xt)
+np.save('train-y.npy', y)
+np.save('test-y.npy', yt)
 
-x, y, xt, yt = retrieve_cached_data()
+# With the cached data
+#x, y, xt, yt = retrieve_cached_data()
 
 model.fit(x=x, y=y, epochs=100)
 

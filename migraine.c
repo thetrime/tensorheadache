@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
-#include "sample.h"
+#include <math.h>
 
 static void free_buffer(void* data, size_t length)
 {
@@ -64,10 +64,7 @@ int main()
    assert(TF_GetCode(status) == TF_OK);
 
    // Fill in the input tensor
-   mfccs("testing/negative-00.wav", TF_TensorData(input_tensor));
-   //   float* input_data = TF_TensorData(input_tensor);
-   //   for (int i = 0; i < 756; i++)
-   //      input_data[i] = test_data[i];
+   mfccs("testing/positive-01.wav", TF_TensorData(input_tensor));
 
    // And run the model?
    TF_SessionRun(session,
