@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <float.h>
 
 #define WINDOW_LENGTH 2048
 #define MEL_FILTER_COUNT 128
@@ -26,7 +27,7 @@ typedef struct
    // Format Header
    char fmt_header[4];     // Contains "fmt " (includes trailing space)
    int fmt_chunk_size;     // Should be 16 for PCM
-   short audio_format;     // Should be 1 for PCM. 3 for IEEE Float
+   short audio_format;     // Should be 1 for PCM. 3 for IEEE float
    short num_channels;
    int sample_rate;
    int byte_rate;          // Number of bytes per second. sample_rate * num_channels * Bytes Per Sample
@@ -49,18 +50,6 @@ void make_window(int size, double* window)
    for (int i = 0; i < WINDOW_LENGTH; i++)
       window[i] = A - ((1-A) * cos(2 * M_PI * (i / ((WINDOW_LENGTH - NON_SYMMETRIC) * 1.0))));
 }
-/* This is what http://practicalcryptography.com/miscellaneous/machine-learning/guide-mel-frequency-cepstral-coefficients-mfccs/#eqn1 gives
-   but it turns out lots of people disagree on this process
-double hz_to_mels(double hz)
-{
-   return 1125 * log(1 + (hz/700));
-}
-
-double mels_to_hz(double mels)
-{
-   return (700 * (exp(mels / 1125.0) - 1));
-}
-*/
 
 double hz_to_mels(double hz)
 {
@@ -116,7 +105,7 @@ double** make_mel_bank(double sample_rate)
 
    for (int m = 0; m < MEL_FILTER_COUNT; m++)
    {
-      for (int k = 0; k < WINDOW_LENGTH; k++)
+      for (int k = 0; k < WINDOW_LENGTH/2 + 1; k++)
       {
          // There are 4 cases here. A graph might help.
          //
@@ -161,15 +150,14 @@ double power_to_db(double power)
    return 10.0 * log10(MAX(1e-10, power));
 }
 
-int mfccs(const char* filename, double* mfccs)
+int mfccs(const char* filename, float* mfccs)
 {
    // First, lets read in the header
    FILE *fd = fopen(filename, "rb");
    assert(fd != NULL);
 
    wav_header_t header;
-
-   assert(fread(&header, 1, sizeof(wav_header_t), fd) == sizeof(wav_header_t));
+   assert(fread(&header, sizeof(wav_header_t), 1, fd) == 1);
    assert(header.sample_rate == 16000);
    assert(header.fmt_chunk_size == 16);
 
@@ -189,7 +177,6 @@ int mfccs(const char* filename, double* mfccs)
    double *samples = malloc(sizeof(double) * (sample_count + 2048));
 
    double melspectrogram[MEL_FILTER_COUNT];
-
    // Now read in each sample, dividing by the maximum possible value to get an input between 0 and 1
    for (int i = 1024 ; i < sample_count + 1048; i++)
    {
@@ -198,24 +185,26 @@ int mfccs(const char* filename, double* mfccs)
          sample = 0;
       else
       {
-         int b = fread(&sample, 1, sizeof(int16_t), fd);
+         int b = fread(&sample, sizeof(int16_t), 1, fd);
          assert(b >= 0);
          if (b == 0)
+         {
+            printf("EOF detected at sample %d\n", i);
             sample = 0;
+         }
       }
       // Normalize the data to be in the range -1..1
       samples[i] = (double)sample / 32768.0;
       // Add reflect padding
       if (i <= 2048)
          samples[2048-i] = (double)sample / 32768.0;
-      if (i > sample_count + 1024)
-         samples[2*(sample_count + 1024) + 1 - i] = (double)sample / 32768.0;
+      //      if (i > sample_count + 1024)
+      // samples[2*(sample_count + 1024) + 1 - i] = (double)sample / 32768.0;
    }
    fclose(fd);
 
    // Ok, now we have the samples in *samples and we must do the stft
    // First set up the buffers and build the FFT plan
-
    fftw_complex    *data, *fft_result;
    fftw_plan       plan_forward;
 
@@ -224,11 +213,11 @@ int mfccs(const char* filename, double* mfccs)
    plan_forward = fftw_plan_dft_1d(WINDOW_LENGTH, data, fft_result, FFTW_FORWARD, FFTW_ESTIMATE );
 
    // Now we read in 2048 samples at a time, starting at 0, then 512, then 1024, then 1536, and so on, until we get to the end
-
    int block_offset = 0;
    int readIndex;
    double frobenius = 0;
    // Process each 2048-sample block of the signal, stopping when the last block would exceed the input buffer
+   double peak = 8.769202922311027; // -DBL_MAX;
    while (block_offset + 2048 < sample_count+2048)
    {
       // Copy the chunk into our buffer. The real part is the windowed sample. The imaginary part is 0.
@@ -238,6 +227,12 @@ int mfccs(const char* filename, double* mfccs)
          // Apply the hann window
          data[i][0] = samples[readIndex] * window[i];
          data[i][1] = 0.0;
+      }
+      if (block_offset == 21504)
+      {
+      //         for (int i = 0; i < WINDOW_LENGTH; i++)
+      //            printf("input[%d] = %.10f\n", block_offset + i, samples[block_offset + i]);
+      //         assert(0);
       }
 
       // Actually do the FFT
@@ -250,8 +245,10 @@ int mfccs(const char* filename, double* mfccs)
       // Also note that we only care about the first half of the output because of symmetry around the nyquist frequency
       // This means we can go from 0 to 1024 (inclusive) and skip the rest
 
+
+
       for (int i = 0; i <= WINDOW_LENGTH/2; i++)
-         fft_result[i][0] = fabs(((fft_result[i][0] * fft_result[i][0]) + (fft_result[i][1] * fft_result[i][1])));
+         fft_result[i][0] = ((fft_result[i][0] * fft_result[i][0]) + (fft_result[i][1] * fft_result[i][1]));
 
       // Then we need the dot product of this with our Mel filter. This is the 'melspectrogram'.
       for (int i = 0; i < MEL_FILTER_COUNT; i++)
@@ -259,8 +256,24 @@ int mfccs(const char* filename, double* mfccs)
          double m = 0;
          for (int j = 0; j < WINDOW_LENGTH/2; j++)
             m = m + mel_bank[i][j] * fft_result[j][0];
-         melspectrogram[i] = power_to_db(m);
+         melspectrogram[i] = m;
+         if (m > peak) peak = m;
+
+         //printf("melspectrogram[%d][%d] = %.20f \n", i, block_offset/512, melspectrogram[i]);
       }
+
+      // Next convert to dB. Unfortunately librosa does this weird threshold thing, capping the values at 80dB below peak
+      // and since we need to have seen all the values to work this out, we have to do another whole pass through the array
+      // After this point, melspectrogram[] is really S
+      printf("Peak: %.10f\n", peak);
+      double threshold = 10.0 * log10(MAX(1e-10, peak)) - 80;
+      for (int i = 0; i < MEL_FILTER_COUNT; i++)
+      {
+         melspectrogram[i] = MAX(10.0 * log10(MAX(1e-10, melspectrogram[i])), threshold);
+//         printf("melspectrogram[%d][%d] = %.20f \n", i, block_offset/512, melspectrogram[i]);
+      }
+
+
 
       // And finally we must do the DCT on this to get the result
       //           N-1
@@ -278,9 +291,11 @@ int mfccs(const char* filename, double* mfccs)
          else
             result = 2 * sum * sqrt(1.0/(2.0*MEL_FILTER_COUNT));
          frobenius += result*result;
+         printf("mfcc[%d] = %.30f\n", next_output, result);
          mfccs[next_output++] = result;
       }
       block_offset += hop_size;
+      printf("Frob of this block is %.10f\n", sqrt(frobenius));
    }
    printf("Generated %d MFCC values (%d)\n", next_output, MFCC_COUNT * chunks);
    frobenius = sqrt(frobenius);
@@ -290,7 +305,7 @@ int mfccs(const char* filename, double* mfccs)
    for (int k = 0; k < MFCC_COUNT * chunks; k++)
    {
 //      mfccs[k] /= frobenius;
-      printf("data[%d] = %.8f\n", k, mfccs[k]);
+      printf("mfccs[%d] = %.8f\n", k, mfccs[k]);
    }
 
    fftw_destroy_plan(plan_forward);
@@ -299,3 +314,18 @@ int mfccs(const char* filename, double* mfccs)
    free_mel_bank(mel_bank);
    return 1;
 }
+
+
+
+// The MFCCs diverge badly at index 504. This corresponds to block 42, starting at input index 21504.
+// This is the first block of input that exceeds the actual sample data
+// We substitute in zeroes from position 22528
+
+// The first block that contains substituted zeroes is actually 41 (20992 - 23040)
+
+// Actually things are slightly off from block 34 (mfcc[408]) onwards, but only *slightly* (0.002)
+// This corresponds to inputs 17408 - 19456 which should be fine. So it may be something else
+
+// The last value for S in block 34 that we compute is slightly dodgy - librosa gives a discrepancy of 0.03 - almost 10,000x the nearest discrepancy
+// (this value is my_S.T[34][127])
+//
