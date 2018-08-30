@@ -170,13 +170,13 @@ int mfccs(const char* filename, float* mfccs)
    int pad_size = WINDOW_LENGTH;
    int sample_count = sample_duration * header.sample_rate;
    int hop_size = 512;
-   int chunks = (sample_count + pad_size - WINDOW_LENGTH) / hop_size;
+   int chunks = (sample_count + pad_size - WINDOW_LENGTH) / hop_size + 1;
    int next_output = 0;
 
    // We need to leave space for 1024 samples of padding at the beginning and end
    double *samples = malloc(sizeof(double) * (sample_count + 2048));
 
-   double melspectrogram[MEL_FILTER_COUNT];
+   double melspectrogram[MEL_FILTER_COUNT][chunks];
    // Now read in each sample, dividing by the maximum possible value to get an input between 0 and 1
    for (int i = 1024 ; i < sample_count + 1048; i++)
    {
@@ -217,8 +217,9 @@ int mfccs(const char* filename, float* mfccs)
    int readIndex;
    double frobenius = 0;
    // Process each 2048-sample block of the signal, stopping when the last block would exceed the input buffer
-   double peak = 8.769202922311027; // -DBL_MAX;
-   while (block_offset + 2048 < sample_count+2048)
+   double peak = -DBL_MAX;
+
+   for (int k = 0; block_offset + 2048 < sample_count+2048; k++)
    {
       // Copy the chunk into our buffer. The real part is the windowed sample. The imaginary part is 0.
       for (int i = 0; i < WINDOW_LENGTH; i++)
@@ -227,12 +228,6 @@ int mfccs(const char* filename, float* mfccs)
          // Apply the hann window
          data[i][0] = samples[readIndex] * window[i];
          data[i][1] = 0.0;
-      }
-      if (block_offset == 21504)
-      {
-      //         for (int i = 0; i < WINDOW_LENGTH; i++)
-      //            printf("input[%d] = %.10f\n", block_offset + i, samples[block_offset + i]);
-      //         assert(0);
       }
 
       // Actually do the FFT
@@ -256,35 +251,38 @@ int mfccs(const char* filename, float* mfccs)
          double m = 0;
          for (int j = 0; j < WINDOW_LENGTH/2; j++)
             m = m + mel_bank[i][j] * fft_result[j][0];
-         melspectrogram[i] = m;
-         if (m > peak) peak = m;
+         assert(k <= chunks);
+         melspectrogram[i][k] = m;
+         if (m > peak)
+            peak = m;
 
          //printf("melspectrogram[%d][%d] = %.20f \n", i, block_offset/512, melspectrogram[i]);
       }
+      block_offset += hop_size;
+   }
 
-      // Next convert to dB. Unfortunately librosa does this weird threshold thing, capping the values at 80dB below peak
-      // and since we need to have seen all the values to work this out, we have to do another whole pass through the array
-      // After this point, melspectrogram[] is really S
-      printf("Peak: %.10f\n", peak);
-      double threshold = 10.0 * log10(MAX(1e-10, peak)) - 80;
-      for (int i = 0; i < MEL_FILTER_COUNT; i++)
-      {
-         melspectrogram[i] = MAX(10.0 * log10(MAX(1e-10, melspectrogram[i])), threshold);
-//         printf("melspectrogram[%d][%d] = %.20f \n", i, block_offset/512, melspectrogram[i]);
-      }
+   // Now we have all the melspectrograms we can finally convert the values in them to db. We couldnt do it before because
+   // unfortunately librosa does this weird threshold thing, capping the values at 80dB below peak for the ENTIRE input
+   // and since we need to have seen all the values to work this out, we have to do another whole pass through the array now
+   // After this point, melspectrogram[] is really S
+   printf("Peak power: %.10f\n", peak);
+   double threshold = 10.0 * log10(MAX(1e-10, peak)) - 80;
+   for (int i = 0; i < MEL_FILTER_COUNT; i++)
+      for (int k = 0; k < chunks; k++)
+         melspectrogram[i][k] = MAX(10.0 * log10(MAX(1e-10, melspectrogram[i][k])), threshold);
 
 
-
-      // And finally we must do the DCT on this to get the result
-      //           N-1
-      // y[k] = 2* sum x[n]*cos(pi*k*(2n+1)/(2*N)), 0 <= k < N.
-      //           n=0
-
+   // And finally we must do the DCT on each melspetrogram to get the mfccs:
+   //           N-1
+   // y[k] = 2* sum x[n]*cos(pi*k*(2n+1)/(2*N)), 0 <= k < N.
+   //           n=0
+   for (int m = 0; m < chunks; m++)
+   {
       for (int k = 0; k < MFCC_COUNT; k++)
       {
          double sum = 0;
          for (int n = 0; n < MEL_FILTER_COUNT; n++)
-            sum += melspectrogram[n] * cos(M_PI * k * (2*n+1) / (2 * MEL_FILTER_COUNT));
+            sum += melspectrogram[n][m] * cos(M_PI * k * (2*n+1) / (2 * MEL_FILTER_COUNT));
          double result;
          if (k == 0)
              result = 2 * sum * sqrt(1.0/(4.0*MEL_FILTER_COUNT));
@@ -294,8 +292,6 @@ int mfccs(const char* filename, float* mfccs)
          printf("mfcc[%d] = %.30f\n", next_output, result);
          mfccs[next_output++] = result;
       }
-      block_offset += hop_size;
-      printf("Frob of this block is %.10f\n", sqrt(frobenius));
    }
    printf("Generated %d MFCC values (%d)\n", next_output, MFCC_COUNT * chunks);
    frobenius = sqrt(frobenius);
@@ -304,7 +300,7 @@ int mfccs(const char* filename, float* mfccs)
    // Divide the whole thing by the Frobenius norm
    for (int k = 0; k < MFCC_COUNT * chunks; k++)
    {
-//      mfccs[k] /= frobenius;
+      mfccs[k] /= frobenius;
       printf("mfccs[%d] = %.8f\n", k, mfccs[k]);
    }
 
@@ -314,18 +310,3 @@ int mfccs(const char* filename, float* mfccs)
    free_mel_bank(mel_bank);
    return 1;
 }
-
-
-
-// The MFCCs diverge badly at index 504. This corresponds to block 42, starting at input index 21504.
-// This is the first block of input that exceeds the actual sample data
-// We substitute in zeroes from position 22528
-
-// The first block that contains substituted zeroes is actually 41 (20992 - 23040)
-
-// Actually things are slightly off from block 34 (mfcc[408]) onwards, but only *slightly* (0.002)
-// This corresponds to inputs 17408 - 19456 which should be fine. So it may be something else
-
-// The last value for S in block 34 that we compute is slightly dodgy - librosa gives a discrepancy of 0.03 - almost 10,000x the nearest discrepancy
-// (this value is my_S.T[34][127])
-//
