@@ -9,6 +9,8 @@ migraine.o:	migraine.c
 mfcc.o:	mfcc.c
 	gcc -g -fsanitize=address  -I/opt/fftw/include -c $< -o $@
 
+cluster: cluster.c
+	gcc cluster.c -framework AudioToolbox -o cluster
 
 .PHONY:	clean
 
