@@ -150,7 +150,7 @@ double power_to_db(double power)
    return 10.0 * log10(MAX(1e-10, power));
 }
 
-int mfccs(const char* filename, float* mfccs)
+int mfccs_from_file(const char* filename, float* mfccs)
 {
    // First, lets read in the header
    FILE *fd = fopen(filename, "rb");
