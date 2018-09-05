@@ -230,6 +230,7 @@ void mfccs_from_context(stream_context_t* context, float* mfccs)
    //           N-1
    // y[k] = 2* sum x[n]*cos(pi*k*(2n+1)/(2*N)), 0 <= k < N.
    //           n=0
+   printf("Computing from spectrogram %d\n", (context->mel_spectrogram_ptr+1) % CHUNK_COUNT);
    for (int m = 0; m < CHUNK_COUNT; m++)
    {
       int mm = (m + context->mel_spectrogram_ptr+1) % CHUNK_COUNT;
@@ -253,7 +254,7 @@ void mfccs_from_context(stream_context_t* context, float* mfccs)
    for (int k = 0; k < MFCC_COUNT * CHUNK_COUNT; k++)
    {
       mfccs[k] /= frobenius;
-      printf("mfccs[%d] = %f\n", k, mfccs[k]);
+      //printf("mfccs[%d] = %f\n", k, mfccs[k]);
    }
 
 }

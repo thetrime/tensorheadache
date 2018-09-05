@@ -19,7 +19,7 @@ static void audio_callback(void *inUserData,
    printf("Hello from input callback. I have %d packets for you!\n", inNumPackets);
    assert(inNumPackets > 512);
    int chunks = inNumPackets / 512;
-   float* data = (float*)inBuffer->mAudioData;
+   double* data = (double*)inBuffer->mAudioData;
    /*
    for (int j = 0; j < inNumPackets; j++)
    {
@@ -36,7 +36,7 @@ static void audio_callback(void *inUserData,
          run_in--;
       else
       {
-         //mfccs_from_context(stream, model_data(model));
+         mfccs_from_context(stream, model_data(model));
          printf("Result: %f\n", run_model(model));
       }
    }
@@ -56,9 +56,9 @@ int clusterize()
    recordFormat.mFormatFlags = kAudioFormatFlagsNativeFloatPacked;
    recordFormat.mFramesPerPacket  = 1;
    recordFormat.mChannelsPerFrame = 1;
-   recordFormat.mBytesPerFrame    = sizeof(Float32);
-   recordFormat.mBytesPerPacket   = sizeof(Float32);
-   recordFormat.mBitsPerChannel   = sizeof(Float32) * 8;
+   recordFormat.mBytesPerFrame    = sizeof(Float64);
+   recordFormat.mBytesPerPacket   = sizeof(Float64);
+   recordFormat.mBitsPerChannel   = sizeof(Float64) * 8;
 
 
 /*

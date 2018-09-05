@@ -10,7 +10,7 @@ int main()
    model_t* model = load_model("model.pb");
    assert(model != NULL);
 
-   FILE *fd = fopen("testing/negative-00.wav", "rb");
+   FILE *fd = fopen("testing/xxx-01.wav", "rb");
    assert(fd != NULL);
 
    char header[44];
@@ -19,7 +19,8 @@ int main()
    double buffer[512];
    stream_context_t* context =  make_stream_context(16000);
 
-   for (int chunk = 0 ; chunk < 65; chunk++)
+   int chunk = 0;
+   while (!feof(fd))
    {
       for (int i = 0; i < 512; i++)
       {
@@ -37,9 +38,15 @@ int main()
             }
          }
          // Normalize the data to be in the range -1..1
-         buffer[i] = (double)sample / 32768.0;
+         buffer[i] = 0; //(double)sample / 32768.0;
       }
       add_chunk_to_context(context, buffer);
+      if (chunk > 64)
+      {
+         mfccs_from_context(context, model_data(model));
+         printf("Result: %f\n", run_model(model));
+      }
+      chunk++;
    }
    fclose(fd);
    mfccs_from_context(context, model_data(model));
