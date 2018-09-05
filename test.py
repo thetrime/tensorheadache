@@ -58,10 +58,10 @@ def predict(filename):
 #model.fit_generator(data_generator(), epochs=100, steps_per_epoch=16)
 
 # With the whole dataset
-#x, y = load_the_data("training")
-#xt, yt = load_the_data("testing")
+x, y = load_the_data("training")
+xt, yt = load_the_data("testing")
 
-x, y, xt, yt = retrieve_cached_data()
+#x, y, xt, yt = retrieve_cached_data()
 
 score = model.evaluate(x=xt, y=yt)
 

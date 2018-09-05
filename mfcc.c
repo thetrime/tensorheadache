@@ -12,11 +12,8 @@
 #include <stdlib.h>
 #include <math.h>
 #include <float.h>
-
-#define WINDOW_LENGTH 2048
-#define MEL_FILTER_COUNT 128
-#define MFCC_COUNT 12
-
+#include <string.h>
+#include "mfcc.h"
 
 typedef struct
 {
@@ -38,9 +35,6 @@ typedef struct
    char data_header[4];    // Contains "data"
    int data_bytes;         // Number of bytes in data. Number of samples * num_channels * sample byte size
 }  wav_header_t;
-
-// Set NON_SYMMETRIC to 1 if you want a non-symmetric window for some reason
-#define NON_SYMMETRIC 0
 
 void make_window(int size, double* window)
 {
@@ -150,6 +144,130 @@ double power_to_db(double power)
    return 10.0 * log10(MAX(1e-10, power));
 }
 
+FILE* tmpfd = NULL;
+
+stream_context_t* make_stream_context(int sample_rate)
+{
+//   tmpfd = fopen("/tmp/out.raw", "wb");
+   stream_context_t* context = malloc(sizeof(stream_context_t));
+   for (int i = 0; i < WINDOW_LENGTH; i++)
+      context->buffer[i] = 0;
+   for (int i = 0; i < CHUNK_COUNT; i++)
+      context->peaks[i] = -DBL_MAX;
+   make_window(WINDOW_LENGTH, context->window);
+   context->mel_bank = make_mel_bank(sample_rate);
+   context->buffer_ptr = 0;
+   context->mel_spectrogram_ptr = 0;
+   context->data  = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * WINDOW_LENGTH);
+   context->fft_result = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * WINDOW_LENGTH);
+   context->plan = fftw_plan_dft_1d(WINDOW_LENGTH, context->data, context->fft_result, FFTW_FORWARD, FFTW_ESTIMATE );
+   context->run_in = 3;
+   return context;
+}
+
+void add_chunk_to_context(stream_context_t* context, double* samples)
+{
+   // Copy the data into the buffer
+   printf("Writing a block of data to %d\n", context->buffer_ptr);
+   memcpy(&context->buffer[context->buffer_ptr], samples, HOP_SIZE * sizeof(double));
+   context->buffer_ptr = (context->buffer_ptr + HOP_SIZE) % WINDOW_LENGTH;
+   int data_start = context->buffer_ptr;
+   if (context->run_in > 0)
+   {
+      context->run_in--;
+      return;
+   }
+   printf("Grinding data from %d\n", data_start);
+   // Window the data from the buffer into the stft input
+   for (int i = 0; i < WINDOW_LENGTH; i++)
+   {
+      context->data[i][0] = context->buffer[(data_start + i) % WINDOW_LENGTH] * context->window[i];
+      context->data[i][1] = 0.0;
+   }
+
+   // Actually do the FFT
+   fftw_execute(context->plan);
+
+   // Then compute the power spectrum
+   for (int i = 0; i <= WINDOW_LENGTH/2; i++)
+      context->fft_result[i][0] = ((context->fft_result[i][0] * context->fft_result[i][0]) + (context->fft_result[i][1] * context->fft_result[i][1]));
+
+   // And finally compute the melspectrogram
+   double peak = -DBL_MAX;
+   for (int i = 0; i < MEL_FILTER_COUNT; i++)
+   {
+      double m = 0;
+      for (int j = 0; j < WINDOW_LENGTH/2; j++)
+         m = m + context->mel_bank[i][j] * context->fft_result[j][0];
+      context->melspectrogram[i][context->mel_spectrogram_ptr] = m;
+      if (m > peak)
+         peak = m;
+   }
+   context->peaks[context->mel_spectrogram_ptr] = peak;
+   context->mel_spectrogram_ptr = (context->mel_spectrogram_ptr + 1) % CHUNK_COUNT;
+}
+
+// This essentially returns garbage until add_chunk_to_context has been called at least (MFCC_COUNT + (WINDOW_LENGTH/HOP_SIZE) - 1) times
+// But for a streaming context, this is not really material - for the default paramters this is 15 calls, or ~ 0.5s worth of garbage.
+// However, it may pay to discard any positive results detected in the first 15 calls!
+void mfccs_from_context(stream_context_t* context, float* mfccs)
+{
+   // Find the peak power in the current context
+   double peak = -DBL_MAX;
+   for (int i = 0; i < CHUNK_COUNT; i++)
+      if (context->peaks[i] > peak)
+         peak = context->peaks[i];
+
+   printf("Peak in block: %.10f\n", peak);
+   // Threshold the current context
+   double threshold = 10.0 * log10(MAX(1e-10, peak)) - 80;
+   for (int i = 0; i < MEL_FILTER_COUNT; i++)
+   {
+      for (int k = 0; k < CHUNK_COUNT; k++)
+      {
+         //printf("xmelspectrogram[%d][%d] = %.10f\n", i, k, context->melspectrogram[i][k]);
+         context->melspectrogram[i][k] = MAX(10.0 * log10(MAX(1e-10, context->melspectrogram[i][k])), threshold);
+//         printf("other_S[%d][%d] = %.10f\n", i, k, context->melspectrogram[i][k]);
+      }
+   }
+//   printf("Foo: %d\n", context->mel_spectrogram_ptr-1);
+//   assert(0);
+   double frobenius = 0;
+   int next_output = 0;
+   // Finally we must do the DCT on each melspetrogram to get the mfccs:
+   //           N-1
+   // y[k] = 2* sum x[n]*cos(pi*k*(2n+1)/(2*N)), 0 <= k < N.
+   //           n=0
+   for (int m = 0; m < CHUNK_COUNT; m++)
+   {
+      int mm = (m + context->mel_spectrogram_ptr-1) % CHUNK_COUNT;
+      printf("m = %d\n", mm);
+      for (int k = 0; k < MFCC_COUNT; k++)
+      {
+
+         double sum = 0;
+         for (int n = 0; n < MEL_FILTER_COUNT; n++)
+            sum += context->melspectrogram[n][m] * cos(M_PI * k * (2*n+1) / (2 * MEL_FILTER_COUNT));
+         double result;
+         if (k == 0)
+             result = 2 * sum * sqrt(1.0/(4.0*MEL_FILTER_COUNT));
+         else
+            result = 2 * sum * sqrt(1.0/(2.0*MEL_FILTER_COUNT));
+         frobenius += result*result;
+         mfccs[next_output++] = result;
+      }
+   }
+   frobenius = sqrt(frobenius);
+   // Divide the whole thing by the Frobenius norm
+   for (int k = 0; k < MFCC_COUNT * CHUNK_COUNT; k++)
+   {
+      mfccs[k] /= frobenius;
+      printf("mfccs[%d] = %f\n", k, mfccs[k]);
+   }
+
+}
+
+
 int mfccs_from_file(const char* filename, float* mfccs)
 {
    // First, lets read in the header
@@ -161,22 +279,15 @@ int mfccs_from_file(const char* filename, float* mfccs)
    assert(header.sample_rate == 16000);
    assert(header.fmt_chunk_size == 16);
 
-   double window[WINDOW_LENGTH];
-   make_window(WINDOW_LENGTH, window);
-
-   double** mel_bank = make_mel_bank(header.sample_rate);
-
    int sample_duration = 2;
    int pad_size = WINDOW_LENGTH;
    int sample_count = sample_duration * header.sample_rate;
-   int hop_size = 512;
-   int chunks = (sample_count + pad_size - WINDOW_LENGTH) / hop_size + 1;
+   int chunks = (sample_count + pad_size - WINDOW_LENGTH) / HOP_SIZE + 1;
    int next_output = 0;
 
    // We need to leave space for 1024 samples of padding at the beginning and end
    double *samples = malloc(sizeof(double) * (sample_count + 2048));
 
-   double melspectrogram[MEL_FILTER_COUNT][chunks];
    // Now read in each sample, dividing by the maximum possible value to get an input between 0 and 1
    for (int i = 1024 ; i < sample_count + 1048; i++)
    {
@@ -202,6 +313,11 @@ int mfccs_from_file(const char* filename, float* mfccs)
          samples[2*(sample_count + 1024) + 1 - i] = (double)sample / 32768.0;
    }
    fclose(fd);
+
+   double window[WINDOW_LENGTH];
+   make_window(WINDOW_LENGTH, window);
+   double** mel_bank = make_mel_bank(header.sample_rate);
+   double melspectrogram[MEL_FILTER_COUNT][chunks];
 
    // Ok, now we have the samples in *samples and we must do the stft
    // First set up the buffers and build the FFT plan
@@ -258,7 +374,7 @@ int mfccs_from_file(const char* filename, float* mfccs)
 
          //printf("melspectrogram[%d][%d] = %.20f \n", i, block_offset/512, melspectrogram[i]);
       }
-      block_offset += hop_size;
+      block_offset += HOP_SIZE;
    }
 
    // Now we have all the melspectrograms we can finally convert the values in them to db. We couldnt do it before because
