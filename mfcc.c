@@ -207,9 +207,9 @@ void add_chunk_to_context(stream_context_t* context, double* samples)
    context->mel_spectrogram_ptr = (context->mel_spectrogram_ptr + 1) % CHUNK_COUNT;
 }
 
-// This essentially returns garbage until add_chunk_to_context has been called at least (MFCC_COUNT + (WINDOW_LENGTH/HOP_SIZE) - 1) times
-// But for a streaming context, this is not really material - for the default paramters this is 15 calls, or ~ 0.5s worth of garbage.
-// However, it may pay to discard any positive results detected in the first 15 calls!
+// This essentially returns garbage until add_chunk_to_context has been called enough times (at least (MFCC_COUNT + (WINDOW_LENGTH/HOP_SIZE) - 1) times)
+// But for a streaming context, this is not really material - for the default paramters this is 63 calls, or ~ 2s worth of garbage.
+// However, it may pay to discard any positive results detected in the first few seconds!
 void mfccs_from_context(stream_context_t* context, float* mfccs)
 {
    // Find the peak power in the current context
@@ -218,20 +218,12 @@ void mfccs_from_context(stream_context_t* context, float* mfccs)
       if (context->peaks[i] > peak)
          peak = context->peaks[i];
 
-   printf("Peak in block: %.10f\n", peak);
    // Threshold the current context
    double threshold = 10.0 * log10(MAX(1e-10, peak)) - 80;
    for (int i = 0; i < MEL_FILTER_COUNT; i++)
-   {
       for (int k = 0; k < CHUNK_COUNT; k++)
-      {
-         //printf("xmelspectrogram[%d][%d] = %.10f\n", i, k, context->melspectrogram[i][k]);
          context->melspectrogram[i][k] = MAX(10.0 * log10(MAX(1e-10, context->melspectrogram[i][k])), threshold);
-//         printf("other_S[%d][%d] = %.10f\n", i, k, context->melspectrogram[i][k]);
-      }
-   }
-//   printf("Foo: %d\n", context->mel_spectrogram_ptr-1);
-//   assert(0);
+
    double frobenius = 0;
    int next_output = 0;
    // Finally we must do the DCT on each melspetrogram to get the mfccs:
@@ -240,8 +232,7 @@ void mfccs_from_context(stream_context_t* context, float* mfccs)
    //           n=0
    for (int m = 0; m < CHUNK_COUNT; m++)
    {
-      int mm = (m + context->mel_spectrogram_ptr-1) % CHUNK_COUNT;
-      printf("m = %d\n", mm);
+      int mm = (m + context->mel_spectrogram_ptr+1) % CHUNK_COUNT;
       for (int k = 0; k < MFCC_COUNT; k++)
       {
 
