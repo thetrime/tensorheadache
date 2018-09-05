@@ -238,7 +238,7 @@ void mfccs_from_context(stream_context_t* context, float* mfccs)
 
          double sum = 0;
          for (int n = 0; n < MEL_FILTER_COUNT; n++)
-            sum += context->melspectrogram[n][m] * cos(M_PI * k * (2*n+1) / (2 * MEL_FILTER_COUNT));
+            sum += context->melspectrogram[n][mm] * cos(M_PI * k * (2*n+1) / (2 * MEL_FILTER_COUNT));
          double result;
          if (k == 0)
              result = 2 * sum * sqrt(1.0/(4.0*MEL_FILTER_COUNT));

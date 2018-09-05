@@ -6,7 +6,7 @@
 
 stream_context_t* stream;
 model_t* model;
-int run_in = 20;
+int run_in = 64;
 
 
 static void audio_callback(void *inUserData,
@@ -37,7 +37,6 @@ static void audio_callback(void *inUserData,
       else
       {
          //mfccs_from_context(stream, model_data(model));
-         //mfccs_from_file("testing/negative-00.wav", model_data(model));
          printf("Result: %f\n", run_model(model));
       }
    }
@@ -96,6 +95,7 @@ int clusterize()
 
    assert(AudioQueueStart(queue, NULL) == noErr);
    getchar();
+   printf("Halting\n");
    return 1;
 }
 
