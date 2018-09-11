@@ -5,15 +5,29 @@ CFLAGS=-I/opt/fftw/include -I/opt/tensorflow/include
 migraine:	migraine.o mfcc.o ibuprofen.o
 	gcc $^ -fsanitize=address -L/opt/tensorflow/lib -ltensorflow -L/opt/fftw/lib -lfftw3 -o $@
 
+migraine2d:	migraine.o mfcc2d.o ibuprofen2d.o
+	gcc $^ -fsanitize=address -L/opt/tensorflow/lib -ltensorflow -L/opt/fftw/lib -lfftw3 -o $@
+
+holmes.o: holmes.c
+	gcc -g $(CFLAGS) -c $< -o $@
+
 migraine.o:	migraine.c
 	gcc -g $(CFLAGS) -c $< -o $@
 
 ibuprofen.o:	ibuprofen.c
 	gcc -g $(CFLAGS) -c $< -o $@
 
+ibuprofen2d.o:	ibuprofen2d.c
+	gcc -g $(CFLAGS) -c $< -o $@
 
 mfcc.o:	mfcc.c
 	gcc -g -fsanitize=address $(CFLAGS) -c $< -o $@
+
+mfcc2d.o:	mfcc2d.c
+	gcc -g -fsanitize=address $(CFLAGS) -c $< -o $@
+
+elementary: holmes.o ibuprofen.o migraine.o
+	gcc $^ -fsanitize=address -L/opt/tensorflow/lib -ltensorflow -L/opt/fftw/lib -lfftw3 -o $@
 
 cluster: cluster.o mfcc.o ibuprofen.o
 	gcc $^ -fsanitize=address -L/opt/tensorflow/lib -ltensorflow -L/opt/fftw/lib -lfftw3 -framework AudioToolbox -o $@
