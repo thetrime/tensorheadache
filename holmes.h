@@ -9,3 +9,14 @@
 #define HOP_SIZE 800
 
 int mfccs_from_file(const char* filename, float*);
+typedef struct
+{
+   double** mel_bank;
+   fftw_complex  *data, *fft_result;
+   fftw_plan plan;
+} context_t;
+
+context_t* alloc_context(int sample_rate);
+void free_context(context_t* context);
+int mfccs_from_circular_buffer(context_t* context, const double* data, int start, int bufsize, float*, int outptr);
+int mfccs_from_file(const char* filename, float*);

@@ -122,6 +122,76 @@ double power_to_db(double power)
    return 10.0 * log10(MAX(1e-10, power));
 }
 
+context_t* alloc_context(int sample_rate)
+{
+   context_t* context = malloc(sizeof(context_t));
+   context->mel_bank = make_mel_bank(sample_rate);
+   context->data= (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * WINDOW_LENGTH);
+   context->fft_result  = (fftw_complex*)fftw_malloc(sizeof(fftw_complex) * WINDOW_LENGTH);
+   for (int i = 0; i < WINDOW_LENGTH; i++)
+      context->data[i][1] = 0.0;
+   context->plan = fftw_plan_dft_1d(FFT_SIZE, context->data, context->fft_result, FFTW_FORWARD, FFTW_ESTIMATE );
+   return context;
+}
+
+void free_context(context_t* context)
+{
+   fftw_destroy_plan(context->plan);
+   fftw_free(context->data);
+   fftw_free(context->fft_result);
+   free_mel_bank(context->mel_bank);
+}
+
+int mfccs_from_circular_buffer(context_t* context, const double* samples, int start, int bufsize, float* out, int outptr)
+{
+   // Initially this is going to be very expensive because we do all this setup stuff each time
+   // Once it works, I can concentrate on just doing the expensive stuff once
+   double melspectrogram[MEL_FILTER_COUNT];
+   double block_sum;
+
+   // Load in the data
+   for (int i = 0; i < WINDOW_LENGTH; i++)
+      context->data[i][0] = samples[(start + i) % bufsize];
+   // Do the FFT
+   fftw_execute(context->plan);
+
+   // Compute the absolute value of the components
+   block_sum = 0;
+   for (int i = 0; i <= FFT_COEFFICIENTS; i++)
+   {
+      context->fft_result[i][0] = ((context->fft_result[i][0] * context->fft_result[i][0]) + (context->fft_result[i][1] * context->fft_result[i][1])) / FFT_SIZE;
+      block_sum += context->fft_result[i][0];
+   }
+
+   // Compute the melspectrogram
+   for (int i = 0; i < MEL_FILTER_COUNT; i++)
+   {
+      double m = 0;
+      for (int j = 0; j < FFT_COEFFICIENTS; j++)
+         m = m + context->mel_bank[i][j] * context->fft_result[j][0];
+      // Then we take the log of MAX(2.220446049250313e-16, m), for some reason
+      m = log(MAX(2.220446049250313e-16, m));
+      melspectrogram[i] = m;
+   }
+
+   // Then do the DCT to get the MFCCs
+   for (int k = 0; k < MFCC_COUNT; k++)
+   {
+      double sum = 0;
+      for (int n = 0; n < MEL_FILTER_COUNT; n++)
+         sum += melspectrogram[n] * cos(M_PI * k * (2*n+1) / (2 * MEL_FILTER_COUNT));
+      double result;
+      if (k == 0)
+         result = log(MAX(2.220446049250313e-16, block_sum));
+      else
+         result = 2 * sum * sqrt(1.0/(2.0*MEL_FILTER_COUNT));
+//      printf("mfcc[%d] = %.10f\n", outptr, result);
+      out[outptr] = result;
+      outptr = (outptr + 1) % 377;
+   }
+   return 1;
+}
+
 int mfccs_from_file(const char* filename, float* mfccs)
 {
    // First, lets read in the header

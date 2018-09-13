@@ -47,13 +47,16 @@ model_t* load_model(const char* filename)
    TF_DeleteBuffer(buffer);
 
    // Right, next setup the input and output tensors
-   int64_t inputShape[] = {1, 756};
-   model->input_tensor = TF_AllocateTensor(TF_FLOAT, inputShape, 2, sizeof(float) * 756);
+   int64_t inputShape[] = {1, 29, 13};
+   model->input_tensor = TF_AllocateTensor(TF_FLOAT, inputShape, 3, sizeof(float) * 377);
 
-   model->input.oper = TF_GraphOperationByName(model->graph, "dense_1_input"); // Set up the input operation
+   model->input.oper = TF_GraphOperationByName(model->graph, "net_input"); // Set up the input operation
    model->input.index = 0;
-   model->output.oper = TF_GraphOperationByName(model->graph, "activation_6/Sigmoid"); // Set up the output operation
+   model->output.oper = TF_GraphOperationByName(model->graph, "dense_1/Sigmoid"); // Set up the output operation
    model->output.index = 0;
+   assert(model->output.oper != NULL);
+   assert(model->input.oper != NULL);
+
 
    TF_SessionOptions *opts = TF_NewSessionOptions();
    model->session = TF_NewSession(model->graph, opts, status);
