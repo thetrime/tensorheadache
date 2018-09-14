@@ -16,30 +16,36 @@ static void audio_callback(void *inUserData,
                            unsigned int inNumPackets,
                            const AudioStreamPacketDescription *inPacketDesc)
 {
-   printf("Hello from input callback. I have %d packets for you!\n", inNumPackets);
    assert(inNumPackets > 512);
    int chunks = inNumPackets / 512;
    double* data = (double*)inBuffer->mAudioData;
-   /*
-   for (int j = 0; j < inNumPackets; j++)
-   {
-      int16_t sample = (int16_t)(32767 * data[j]);
-      fwrite(&sample, sizeof(int16_t), 1, fd);
-   }
-   fflush(fd);
-   */
-   printf("Chunks in block: %d\n", chunks);
+   double score = 0;
+   double best_score = 0;
    for (int i = 0; i < chunks; i++)
    {
       add_chunk_to_context(stream, &data[512 * i]);
       if (run_in > 0)
+      {
          run_in--;
+         if (run_in == 0)
+            printf("Ready!\n");
+      }
       else
       {
          mfccs_from_context(stream, model_data(model));
-         printf("Result: %f\n", run_model(model));
+         score = run_model(model);
+         if (score > best_score)
+            best_score = score;
+         /*
+         if (score > 0.9)
+            fprintf(stderr, "%d", (int)(score * 100) - 90);
+         else
+            fprintf(stderr, ".");
+         */
       }
    }
+   if (run_in == 0)
+      printf("%.3f\n", best_score);
    assert(AudioQueueEnqueueBuffer(inQueue, inBuffer, 0, NULL) == noErr);
 }
 
@@ -60,17 +66,6 @@ int clusterize()
    recordFormat.mBytesPerPacket   = sizeof(Float64);
    recordFormat.mBitsPerChannel   = sizeof(Float64) * 8;
 
-
-/*
-   recordFormat.mFormatFlags = kLinearPCMFormatFlagIsBigEndian | kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked;
-   recordFormat.mSampleRate = 16000;
-   recordFormat.mFormatID = kAudioFormatLinearPCM;
-   recordFormat.mBytesPerPacket = 4;
-   recordFormat.mFramesPerPacket = 1;
-   recordFormat.mBytesPerFrame = 4;
-   recordFormat.mChannelsPerFrame = 1;
-   recordFormat.mBitsPerChannel = 16;
-*/
    unsigned int propSize = sizeof(recordFormat);
    assert(AudioFormatGetProperty(kAudioFormatProperty_FormatInfo,
                                  0,
@@ -92,7 +87,7 @@ int clusterize()
         
    assert(AudioQueueAllocateBuffer(queue, 32768, &buffer) == noErr);
    assert(AudioQueueEnqueueBuffer(queue, buffer, 0, NULL) == noErr);
-
+   printf("Please wait for a while as I fill the input buffer...\n");
    assert(AudioQueueStart(queue, NULL) == noErr);
    getchar();
    printf("Halting\n");

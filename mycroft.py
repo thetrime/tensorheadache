@@ -76,3 +76,19 @@ def filterbanks(sample_rate, num_filt, fft_len):
     return banks
 
 f = filterbanks(16000, 20, 257)
+
+
+# For listening:
+#   Samples arrive in the update() function. These are appended to window_audio
+#   If window_audio exceeds 1,600 samples (actually, window_samples: above) then:
+#       vectorize_raw is called on the whole window_audio buffer to produce new_features
+#       window_audio is truncated by the length of the new_features * 800. This basically uses up all the
+#       audio that was converted. The 'length' of new_features is the number of 1x13 mfcc vectors, essentially - one for each hop of input
+#       new_features is appended to mfccs
+#       mfccs is trimmed from the other end to ensure it remains the same size: (29, 13). In other words, we always operate on 29 chunks of data, broken into 13-dim vectors
+#   If use_delta is True (which it should not be) then mfccs is passed through add_deltas()
+#   Finally, we call runner.run(mfccs). This just returns model.predict(inputs[np.newaxis])[0][0]
+
+# vectorize_raw returns one vector for 1600 inputs, two for 2400, three for 3200 etc.
+# In other words, (x/800 - 1). To fill the MFCC vector entirely requires 24,000 samples or 1.5s of input.
+

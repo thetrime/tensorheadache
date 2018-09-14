@@ -11,7 +11,7 @@ int main()
    assert(model != NULL);
 
    // Fill in the input tensor
-   mfccs_from_file("testing/negative-07.wav", model_data(model));
+   mfccs_from_file("testing/negative-00.wav", model_data(model));
 
    printf("Result: %f\n", run_model(model));
    printf("Result: %f\n", run_model(model));

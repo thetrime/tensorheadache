@@ -168,7 +168,7 @@ stream_context_t* make_stream_context(int sample_rate)
 void add_chunk_to_context(stream_context_t* context, double* samples)
 {
    // Copy the data into the buffer
-   printf("Writing a block of data to %d\n", context->buffer_ptr);
+   //printf("Writing a block of data to %d\n", context->buffer_ptr);
    memcpy(&context->buffer[context->buffer_ptr], samples, HOP_SIZE * sizeof(double));
    context->buffer_ptr = (context->buffer_ptr + HOP_SIZE) % WINDOW_LENGTH;
    int data_start = context->buffer_ptr;
@@ -177,13 +177,18 @@ void add_chunk_to_context(stream_context_t* context, double* samples)
       context->run_in--;
       return;
    }
-   printf("Grinding data from %d\n", data_start);
+   //printf("Grinding data from %d\n", data_start);
    // Window the data from the buffer into the stft input
+   // Play with ffplay -f s16le -ar 16k -ac 1  /tmp/last.raw
+   FILE* fd = fopen("/tmp/last.raw", "wb");
    for (int i = 0; i < WINDOW_LENGTH; i++)
    {
       context->data[i][0] = context->buffer[(data_start + i) % WINDOW_LENGTH] * context->window[i];
       context->data[i][1] = 0.0;
+      int16_t j = context->data[i][0] * 32767;
+      fwrite(&j, 2, 1, fd);
    }
+   fclose(fd);
 
    // Actually do the FFT
    fftw_execute(context->plan);
@@ -214,6 +219,7 @@ void mfccs_from_context(stream_context_t* context, float* mfccs)
 {
    // Find the peak power in the current context
    double peak = -DBL_MAX;
+   double max = -DBL_MAX;
    for (int i = 0; i < CHUNK_COUNT; i++)
       if (context->peaks[i] > peak)
          peak = context->peaks[i];
@@ -230,7 +236,7 @@ void mfccs_from_context(stream_context_t* context, float* mfccs)
    //           N-1
    // y[k] = 2* sum x[n]*cos(pi*k*(2n+1)/(2*N)), 0 <= k < N.
    //           n=0
-   printf("Computing from spectrogram %d\n", (context->mel_spectrogram_ptr+1) % CHUNK_COUNT);
+   //printf("Computing from spectrogram %d\n", (context->mel_spectrogram_ptr+1) % CHUNK_COUNT);
    for (int m = 0; m < CHUNK_COUNT; m++)
    {
       int mm = (m + context->mel_spectrogram_ptr+1) % CHUNK_COUNT;
@@ -247,13 +253,15 @@ void mfccs_from_context(stream_context_t* context, float* mfccs)
             result = 2 * sum * sqrt(1.0/(2.0*MEL_FILTER_COUNT));
          frobenius += result*result;
          mfccs[next_output++] = result;
+         if (result > max)
+            max = result;
       }
    }
    frobenius = sqrt(frobenius);
    // Divide the whole thing by the Frobenius norm
    for (int k = 0; k < MFCC_COUNT * CHUNK_COUNT; k++)
    {
-      mfccs[k] /= frobenius;
+      mfccs[k] /= max; //frobenius;
       //printf("mfccs[%d] = %f\n", k, mfccs[k]);
    }
 

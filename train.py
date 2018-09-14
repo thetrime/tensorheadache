@@ -88,7 +88,7 @@ def load_features(filename):
         # Make into a list
         mfccs = mfccs.T.flatten()
         # Normalize the data. This seems to make an ENORMOUS difference
-        return mfccs / np.linalg.norm(mfccs)
+        return mfccs / mfccs.max() #np.linalg.norm(mfccs)
 
 
 def predict(filename):
@@ -98,16 +98,19 @@ def predict(filename):
 # With a generator-based trainer
 #model.fit_generator(data_generator(), epochs=100, steps_per_epoch=16)
 
-# With the whole dataset
-x, y = load_the_data("training")
-xt, yt = load_the_data("testing")
-np.save('train-x.npy', x)
-np.save('test-x.npy', xt)
-np.save('train-y.npy', y)
-np.save('test-y.npy', yt)
+live_data = True
 
-# With the cached data
-#x, y, xt, yt = retrieve_cached_data()
+if live_data:
+    # With the whole dataset
+    x, y = load_the_data("training")
+    xt, yt = load_the_data("testing")
+    #np.save('train-x.npy', x)
+    #np.save('test-x.npy', xt)
+    #np.save('train-y.npy', y)
+    #np.save('test-y.npy', yt)
+else:
+    # With the cached data
+    x, y, xt, yt = retrieve_cached_data()
 
 model.fit(x=x, y=y, epochs=100)
 
