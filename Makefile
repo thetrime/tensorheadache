@@ -41,6 +41,12 @@ baker: baker.o holmes.o ibuprofen.o
 baker.o: baker.c
 	gcc -c baker.c $(CFLAGS) -o $@
 
+bakerloo: bakerloo.o holmes.o ibuprofen.o
+	gcc $^ -fsanitize=address -L/opt/tensorflow/lib -ltensorflow -L/opt/fftw/lib -lfftw3 -framework AudioToolbox -o $@
+
+bakerloo.o: bakerloo.c block.c
+	gcc -c bakerloo.c $(CFLAGS) -o $@
+
 
 paracetamol: ibuprofen.o mfcc.o paracetamol.o
 	gcc $^ -fsanitize=address -L/opt/tensorflow/lib -ltensorflow -L/opt/fftw/lib -lfftw3  -o $@

@@ -150,8 +150,13 @@ int mfccs_from_circular_buffer(context_t* context, const double* samples, int st
    double block_sum;
 
    // Load in the data
+   //printf("Input: ");
    for (int i = 0; i < WINDOW_LENGTH; i++)
+   {
       context->data[i][0] = samples[(start + i) % bufsize];
+      //printf("%.3f ", context->data[i][0]);
+   }
+   //   printf("\n");
    // Do the FFT
    fftw_execute(context->plan);
 
@@ -185,10 +190,11 @@ int mfccs_from_circular_buffer(context_t* context, const double* samples, int st
          result = log(MAX(2.220446049250313e-16, block_sum));
       else
          result = 2 * sum * sqrt(1.0/(2.0*MEL_FILTER_COUNT));
-//      printf("mfcc[%d] = %.10f\n", outptr, result);
+      //printf("%.10f ", result);
       out[outptr] = result;
       outptr = (outptr + 1) % 377;
    }
+   //printf("\n");
    return 1;
 }
 
