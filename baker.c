@@ -15,8 +15,6 @@ double buffer[1600];
 int bufptr = 0;
 int m = 0;
 context_t* context;
-FILE *fd1 = NULL;
-FILE *fd2 = NULL;
 
 #include "block.c"
 
@@ -28,16 +26,7 @@ static void audio_callback(void *inUserData,
                            unsigned int inNumPackets,
                            const AudioStreamPacketDescription *inPacketDesc)
 {
-   double* data = (double*)inBuffer->mAudioData;
-   int16_t intdata[inNumPackets];
-   for (int q = 0; q < inNumPackets; q++)
-      intdata[q] = data[q] * 32767;
-   fwrite(intdata, sizeof(int16_t), inNumPackets, fd1);
-   fprintf(fd2, "%d, ", inNumPackets);
-   fflush(fd1);
-   fflush(fd2);
-   process_block(data, inNumPackets);
-
+   process_block((double*)inBuffer->mAudioData, inNumPackets);
    assert(AudioQueueEnqueueBuffer(inQueue, inBuffer, 0, NULL) == noErr);
 
 }
@@ -53,10 +42,6 @@ int clusterize()
    memset(buffer, 0, sizeof(double)*1600);
    AudioStreamBasicDescription recordFormat;
    memset(&recordFormat, 0, sizeof(recordFormat));
-   fd1 = fopen("/tmp/out.raw", "wb");
-   fd2 = fopen("/tmp/sizes.h", "wb");
-   fprintf(fd2, "int sizes[] = {");
-   fflush(fd2),
 
    recordFormat.mFormatID = kAudioFormatLinearPCM;
    recordFormat.mSampleRate = sample_rate;
@@ -88,7 +73,6 @@ int clusterize()
         
    assert(AudioQueueAllocateBuffer(queue, 32768, &buffer) == noErr);
    assert(AudioQueueEnqueueBuffer(queue, buffer, 0, NULL) == noErr);
-   printf("Please wait for a while as I fill the input buffer...\n");
    assert(AudioQueueStart(queue, NULL) == noErr);
    getchar();
    printf("Halting\n");
