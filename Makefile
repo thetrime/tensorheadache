@@ -38,7 +38,7 @@ cluster.o: cluster.c
 baker: baker.o holmes.o ibuprofen.o
 	gcc $^ -fsanitize=address -L/opt/tensorflow/lib -ltensorflow -L/opt/fftw/lib -lfftw3 -framework AudioToolbox -o $@
 
-baker.o: baker.c
+baker.o: baker.c block.c
 	gcc -c baker.c $(CFLAGS) -o $@
 
 bakerloo: bakerloo.o holmes.o ibuprofen.o
