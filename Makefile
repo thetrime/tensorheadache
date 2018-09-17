@@ -1,7 +1,8 @@
 # You will need LD_LIBRARY_PATH to point to /opt/tensorflow/lib
 
 CFLAGS=-I/opt/fftw/include -I/opt/tensorflow/include
-
+SWI_CFLAGS=`PKG_CONFIG_PATH=/opt/swi-prolog/lib/pkgconfig/ pkg-config swipl --cflags`
+SWI_LDFLAGS=`PKG_CONFIG_PATH=/opt/swi-prolog/lib/pkgconfig/ pkg-config swipl --libs`
 migraine:	migraine.o mfcc.o ibuprofen.o
 	gcc $^ -fsanitize=address -L/opt/tensorflow/lib -ltensorflow -L/opt/fftw/lib -lfftw3 -o $@
 
@@ -60,8 +61,8 @@ paracetamol.o: paracetamol.c
 clean:
 	rm -f *.o *.so
 
-libuprofen.so: libuprofen.o holmes.o ibupuprofen.o
-	gcc $^ -fsanitize=address -L/opt/tensorflow/lib -ltensorflow -L/opt/fftw/lib -lfftw3 -shared -o $@
+libuprofen.so: libuprofen.o holmes.o ibuprofen.o
+	gcc $^ -fsanitize=address -L/opt/tensorflow/lib -ltensorflow -L/opt/fftw/lib -lfftw3 $(SWI_LDFLAGS) -shared -o $@
 
 libuprofen.o: libuprofen.c
-	gcc -c libuprofen.c $(CFLAGS) -o $@
+	gcc -c libuprofen.c $(SWI_CFLAGS) $(CFLAGS) -o $@

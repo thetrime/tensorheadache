@@ -1,6 +1,7 @@
 #include <SWI-Prolog.h>
 #include <SWI-Stream.h>
 #include <assert.h>
+#include <string.h>
 #include "holmes.h"
 
 static int release_model(atom_t symbol)
@@ -25,7 +26,7 @@ foreign_t load_tensorflow_model(term_t Filename, term_t Model)
    char* filename;
    context_t* context;
    assert(PL_get_atom_chars(Filename, &filename));
-   context = alloc_context(16000, filename);
+   context = alloc_context(filename, 16000);
    return PL_unify_blob(Model, context, sizeof(*context), &model_blob);
 }
 
@@ -35,6 +36,9 @@ foreign_t wait_for_model(term_t Model, term_t Threshhold)
 {
    PL_blob_t *type;
    void *data;
+   double threshhold;
+   if (!PL_get_float(Threshhold, &threshhold))
+      return PL_type_error("float", Threshhold);
    if (PL_get_blob(Model, &data, NULL, &type) && type == &model_blob)
    {
       context_t* context = (context_t*)data;
@@ -43,13 +47,13 @@ foreign_t wait_for_model(term_t Model, term_t Threshhold)
       {
          int16_t samples[1024];
          int sampleCount = 1024;
-         if (process_block_double(context, samples, sampleCount) > threshhold)
+         if (process_block_int16(context, samples, sampleCount) > threshhold)
             PL_succeed;
-         if (PL_handle_signals(void) == -1)
+         if (PL_handle_signals() == -1)
             return FALSE;
       }
    }
-   return PL_type_error("tensorflow_model");
+   return PL_type_error("tensorflow_model", Model);
 }
 
 install_t install_libuprofen()
