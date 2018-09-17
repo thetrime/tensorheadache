@@ -32,6 +32,65 @@ typedef struct
    int data_bytes;         // Number of bytes in data. Number of samples * num_channels * sample byte size
 }  wav_header_t;
 
+double process_block_double(context_t* context, double* data, int inNumPackets)
+{
+   int i = 0;
+   while (i < inNumPackets)
+   {
+      // Compute how many bytes would bring the buffer up to a new chunk
+      int thisChunkSize = 800 - (context->bufptr % 800);
+      // Do not copy more packets than we have though
+      if (thisChunkSize + i > inNumPackets)
+         thisChunkSize = inNumPackets - i;
+      // Copy the data in to the buffer
+      memcpy(&context->buffer[context->bufptr], &data[i], thisChunkSize*sizeof(double));
+      context->bufptr += thisChunkSize;
+      context->bufptr = context->bufptr % 1600;
+      if ((context->bufptr % 800) == 0)
+      {
+         // If bufptr is 0 then the block from 800 to 800 is ready. Otherwise the block from 0-1600 is ready
+         // The thing that I missed the first time is that precise uses a progressive buffer. New mfcc vectors are added at the end
+         // which means that effectively, everything gets shuffled back one index each time we add a new vector. It is not circular unless
+         // we can move the 'start' point of the tensor data forward by 1 vector each time. There might be a nicer solution than this, but
+         // for now, just move the array back one, and ALWAYS write to the last spot in the tensor data stucture
+         memcpy(model_data(context->model), &model_data(context->model)[13], sizeof(float)*13*28);
+         mfccs_from_circular_buffer(context, context->bufptr, 1600, model_data(context->model), 28*13);
+      }
+      i += thisChunkSize;
+   }
+   return run_model(context->model);
+}
+
+double process_block_int16(context_t* context, int16_t* data, int inNumPackets)
+{
+   int i = 0;
+   while (i < inNumPackets)
+   {
+      // Compute how many bytes would bring the buffer up to a new chunk
+      int thisChunkSize = 800 - (context->bufptr % 800);
+      // Do not copy more packets than we have though
+      if (thisChunkSize + i > inNumPackets)
+         thisChunkSize = inNumPackets - i;
+      // Copy the data in to the buffer, sample by agonizing sample, turning each one into a double
+      for (int j = 0; j < thisChunkSize; j++)
+         context->buffer[context->bufptr++] = (double)data[i] / 32767.0;
+      context->bufptr = context->bufptr % 1600;
+      if ((context->bufptr % 800) == 0)
+      {
+         // If bufptr is 0 then the block from 800 to 800 is ready. Otherwise the block from 0-1600 is ready
+         // The thing that I missed the first time is that precise uses a progressive buffer. New mfcc vectors are added at the end
+         // which means that effectively, everything gets shuffled back one index each time we add a new vector. It is not circular unless
+         // we can move the 'start' point of the tensor data forward by 1 vector each time. There might be a nicer solution than this, but
+         // for now, just move the array back one, and ALWAYS write to the last spot in the tensor data stucture
+         memcpy(model_data(context->model), &model_data(context->model)[13], sizeof(float)*13*28);
+         mfccs_from_circular_buffer(context, context->bufptr, 1600, model_data(context->model), 28*13);
+      }
+      i += thisChunkSize;
+   }
+   return run_model(context->model);
+}
+
+
 
 double hz_to_mels(double hz)
 {
@@ -122,7 +181,7 @@ double power_to_db(double power)
    return 10.0 * log10(MAX(1e-10, power));
 }
 
-context_t* alloc_context(int sample_rate)
+context_t* alloc_context(char* filename, int sample_rate)
 {
    context_t* context = malloc(sizeof(context_t));
    context->mel_bank = make_mel_bank(sample_rate);
@@ -131,6 +190,11 @@ context_t* alloc_context(int sample_rate)
    for (int i = 0; i < WINDOW_LENGTH; i++)
       context->data[i][1] = 0.0;
    context->plan = fftw_plan_dft_1d(FFT_SIZE, context->data, context->fft_result, FFTW_FORWARD, FFTW_ESTIMATE );
+   context->model = load_model(filename);
+   float* f = model_data(context->model);
+   memset(f, 0, sizeof(float) * 13 * 29);
+   memset(context->buffer, 0, sizeof(double)*WINDOW_LENGTH);
+   context->bufptr = 0;
    return context;
 }
 
@@ -142,12 +206,13 @@ void free_context(context_t* context)
    free_mel_bank(context->mel_bank);
 }
 
-int mfccs_from_circular_buffer(context_t* context, const double* samples, int start, int bufsize, float* out, int outptr)
+int mfccs_from_circular_buffer(context_t* context, int start, int bufsize, float* out, int outptr)
 {
    // Initially this is going to be very expensive because we do all this setup stuff each time
    // Once it works, I can concentrate on just doing the expensive stuff once
    double melspectrogram[MEL_FILTER_COUNT];
    double block_sum;
+   double* samples = context->buffer;
 
    // Load in the data
    //printf("Input: ");

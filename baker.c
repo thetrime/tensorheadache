@@ -4,20 +4,7 @@
 #include "holmes.h"
 #include "ibuprofen.h"
 
-model_t* model;
-int run_in = 29;
-
-// I need to buffer 1600 samples. Each time we get data, fill up to 800 bytes of the buffer with the data, then every 800 bytes
-// compute the MFCCs for the buffer. It should produce just a single vector, basically. Repeat with the next 800 bytes, wrapping at the end.
-// Finally, run the simulation.
-
-double buffer[1600];
-int bufptr = 0;
-int m = 0;
 context_t* context;
-
-#include "block.c"
-
 
 static void audio_callback(void *inUserData,
                            AudioQueueRef inQueue,
@@ -26,7 +13,10 @@ static void audio_callback(void *inUserData,
                            unsigned int inNumPackets,
                            const AudioStreamPacketDescription *inPacketDesc)
 {
-   process_block((double*)inBuffer->mAudioData, inNumPackets);
+   double score = process_block_double(context, (double*)inBuffer->mAudioData, inNumPackets);
+   for (int i = 1 ; i < 100; i++)
+      printf("%s", i <= score*100?"*":"-");
+   printf("\n");
    assert(AudioQueueEnqueueBuffer(inQueue, inBuffer, 0, NULL) == noErr);
 
 }
@@ -35,11 +25,7 @@ static void audio_callback(void *inUserData,
 int clusterize()
 {
    int sample_rate = 16000;
-   model = load_model("qqq.pb");
-   context = alloc_context(sample_rate);
-   float* f = model_data(model);
-   memset(f, 0, sizeof(float) * 13 * 29);
-   memset(buffer, 0, sizeof(double)*1600);
+   context = alloc_context("qqq.pb", sample_rate);
    AudioStreamBasicDescription recordFormat;
    memset(&recordFormat, 0, sizeof(recordFormat));
 

@@ -59,3 +59,9 @@ paracetamol.o: paracetamol.c
 
 clean:
 	rm -f *.o *.so
+
+libuprofen.so: libuprofen.o holmes.o ibupuprofen.o
+	gcc $^ -fsanitize=address -L/opt/tensorflow/lib -ltensorflow -L/opt/fftw/lib -lfftw3 -shared -o $@
+
+libuprofen.o: libuprofen.c
+	gcc -c libuprofen.c $(CFLAGS) -o $@

@@ -1,3 +1,6 @@
+#ifndef IBUPROFEN_H
+#define IBUPROFEN_H
+
 #include <tensorflow/c/c_api.h>
 
 typedef struct
@@ -14,3 +17,4 @@ model_t* load_model(const char* filename);
 float* model_data(model_t* model);
 float run_model(model_t* model);
 void free_model(model_t* model);
+#endif
