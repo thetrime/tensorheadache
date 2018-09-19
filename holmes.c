@@ -73,7 +73,7 @@ double process_block_int16(context_t* context, int16_t* data, int inNumPackets)
          thisChunkSize = inNumPackets - i;
       // Copy the data in to the buffer, sample by agonizing sample, turning each one into a double
       for (int j = 0; j < thisChunkSize; j++)
-         context->buffer[context->bufptr++] = (double)data[i] / 32767.0;
+         context->buffer[context->bufptr++] = (double)data[j] / 32768.0;
       context->bufptr = context->bufptr % 1600;
       if ((context->bufptr % 800) == 0)
       {

@@ -66,3 +66,9 @@ libuprofen.so: libuprofen.o holmes.o ibuprofen.o
 
 libuprofen.o: libuprofen.c
 	gcc -c libuprofen.c $(SWI_CFLAGS) $(CFLAGS) -o $@
+
+wavy.o: wavy.c
+	gcc -c wavy.c -o wavy.o
+
+libuprofen-wavy.so: libuprofen.o holmes.o wavy.o ibuprofen.o
+	gcc $^ -L/opt/tensorflow/lib -ltensorflow -L/opt/fftw/lib -lfftw3 $(SWI_LDFLAGS) -shared -o $@
